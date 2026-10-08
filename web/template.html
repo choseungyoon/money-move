@@ -80,7 +80,7 @@ button { touch-action: manipulation; }
 
 /* 무대 */
 .stage { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; align-items: start; }
-.mapwrap { position: relative; height: clamp(540px, 76vh, 920px); background: radial-gradient(120% 90% at 55% 40%, #0d1830 0%, var(--ink) 70%); border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; touch-action: none; }
+.mapwrap { position: relative; height: clamp(540px, 76vh, 920px); background: radial-gradient(120% 90% at 55% 40%, #0d1830 0%, var(--ink) 70%); border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; touch-action: pan-y; }
 .mapwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 #fx { pointer-events: none; }
 .legend { position: absolute; left: 12px; bottom: 12px; display: grid; gap: 6px; padding: 10px 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: var(--r-s); font-size: 12px; color: var(--muted); pointer-events: none; }
@@ -95,6 +95,8 @@ button { touch-action: manipulation; }
 .legend .cls-strip span { margin-left: 6px; }
 .zoom { position: absolute; right: 12px; top: 12px; display: grid; gap: 4px; }
 .zoom button { width: 32px; height: 32px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-s); cursor: pointer; font-family: var(--font-num); font-size: 16px; color: var(--fg); }
+.hint .h-touch { display: none; }
+@media (pointer: coarse) { .hint .h-mouse { display: none; } .hint .h-touch { display: inline; } .hint { display: block !important; } }
 .hint { position: absolute; right: 12px; bottom: 12px; font-size: 11px; color: var(--muted); pointer-events: none; text-align: right; }
 .tip { position: absolute; pointer-events: none; min-width: 200px; max-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-s); padding: 10px 12px; font-size: 12px; box-shadow: 0 10px 30px #0008; z-index: 3; }
 .tip h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
@@ -235,7 +237,7 @@ button { touch-action: manipulation; }
         <button id="anim" aria-label="흐름 애니메이션 멈춤" aria-pressed="false">❚❚</button>
       </div>
       <div class="legend" id="legend"></div>
-      <div class="hint">지역을 누르면 유입·유출 상세<br>휠과 드래그로 확대·이동</div>
+      <div class="hint">지역을 누르면 유입·유출 상세<br><span class="h-mouse">휠과 드래그로 확대·이동</span><span class="h-touch">두 손가락으로 확대·이동</span></div>
       <div class="tip" id="tip" hidden></div>
       <div class="nodata" id="nodata" hidden></div>
     </div>
@@ -906,28 +908,66 @@ const D = /*__DATA__*/null;
     return hit;
   }
 
-  /* ---------- 상호작용 ---------- */
-  let drag = null, moved = false;
-  wrap.addEventListener("pointerdown", (e) => { if (e.target.closest("button")) return; drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; moved = false; wrap.setPointerCapture(e.pointerId); });
+  /* ---------- 상호작용 ----------
+     마우스: 휠 확대, 드래그 이동.
+     터치: 협력형 제스처(Google 지도 임베드와 같은 방식).
+       두 손가락 = 핀치 확대·축소 + 이동, 한 손가락 = 페이지 스크롤(지도에 갇히지 않게), 짧은 탭 = 지역 선택.
+     CSS touch-action: pan-y 로 세로 스크롤만 브라우저에 맡기고 핀치는 여기서 처리한다. */
+  const ptrs = new Map();           // pointerId → {x, y} (지도 기준 좌표)
+  let drag = null, pinch = null, moved = false, tapStart = null, drawQueued = false;
+  const local = (e) => { const r = wrap.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  const requestDraw = () => { if (drawQueued) return; drawQueued = true; requestAnimationFrame(() => { drawQueued = false; drawMap(); }); };
+  function startPinch() {
+    const [a, b] = [...ptrs.values()];
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    // 시작 시점에 두 손가락 가운데 아래에 있던 지도 지점을 기억해, 그 지점이 계속 손가락 가운데에 오도록 한다
+    pinch = { d0: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)), k0: view.k, bx: (mid.x - view.tx) / view.k, by: (mid.y - view.ty) / view.k };
+    drag = null; moved = true; tip.hidden = true;
+  }
+  wrap.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button")) return;
+    const p = local(e);
+    ptrs.set(e.pointerId, p);
+    if (ptrs.size === 2) { startPinch(); return; }
+    if (ptrs.size > 2) return;
+    moved = false; tapStart = { ...p, t: performance.now() };
+    if (e.pointerType !== "touch") { drag = { x: p.x, y: p.y, tx: view.tx, ty: view.ty }; wrap.setPointerCapture(e.pointerId); }
+  });
   wrap.addEventListener("pointermove", (e) => {
-    const r = wrap.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
-    if (drag) {
-      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
-      if (Math.hypot(dx, dy) > 4) moved = true;
-      if (moved) { view.tx = drag.tx + dx; view.ty = drag.ty + dy; clampView(); tip.hidden = true; drawMap(); return; }
+    const p = local(e);
+    if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, p);
+    if (pinch && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()];
+      const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      view.k = Math.max(1, Math.min(7, pinch.k0 * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0));
+      view.tx = mid.x - pinch.bx * view.k; view.ty = mid.y - pinch.by * view.k;
+      clampView(); syncViewBtns(); requestDraw();
+      return;
     }
+    if (tapStart && Math.hypot(p.x - tapStart.x, p.y - tapStart.y) > 8) moved = true;
+    if (drag && moved) { view.tx = drag.tx + p.x - drag.x; view.ty = drag.ty + p.y - drag.y; clampView(); tip.hidden = true; requestDraw(); return; }
     if (e.pointerType === "touch") return;
-    const h = hitNode(x, y);
-    if (h !== st.hover) { st.hover = h; drawMap(); }
-    showTip(h, x, y);
+    const h = hitNode(p.x, p.y);
+    if (h !== st.hover) { st.hover = h; requestDraw(); }
+    showTip(h, p.x, p.y);
     wrap.style.cursor = h != null ? "pointer" : "grab";
   });
-  wrap.addEventListener("pointerup", (e) => {
-    const r = wrap.getBoundingClientRect();
-    if (drag && !moved) { const h = hitNode(e.clientX - r.left, e.clientY - r.top); setFocus(h === st.focus ? null : h); }
-    drag = null;
-  });
-  wrap.addEventListener("pointerleave", () => { if (!drag) { st.hover = null; tip.hidden = true; drawMap(); } });
+  function endPointer(e, cancelled) {
+    if (!ptrs.has(e.pointerId)) return;
+    ptrs.delete(e.pointerId);
+    if (pinch) { if (ptrs.size < 2) pinch = null; return; }  // 핀치가 끝난 손가락은 탭으로 치지 않는다
+    if (!cancelled && tapStart && !moved && ptrs.size === 0 && performance.now() - tapStart.t < 500) {
+      const p = local(e), h = hitNode(p.x, p.y);
+      setFocus(h === st.focus ? null : h);
+    }
+    if (ptrs.size === 0) { drag = null; tapStart = null; }
+  }
+  wrap.addEventListener("pointerup", (e) => endPointer(e, false));
+  // 한 손가락으로 세로로 쓸면 브라우저가 페이지 스크롤을 가져가며 pointercancel 을 보낸다: 탭이 아니다
+  wrap.addEventListener("pointercancel", (e) => endPointer(e, true));
+  wrap.addEventListener("pointerleave", (e) => { if (e.pointerType !== "touch" && !drag) { st.hover = null; tip.hidden = true; requestDraw(); } });
+  // iOS Safari는 핀치를 페이지 확대로 가져가려 한다. 지도 위에서는 막는다.
+  wrap.addEventListener("gesturestart", (e) => e.preventDefault());
   wrap.addEventListener("wheel", (e) => {
     e.preventDefault();
     const r = wrap.getBoundingClientRect();
@@ -936,7 +976,7 @@ const D = /*__DATA__*/null;
   function zoomAt(x, y, f) {
     const k = Math.max(1, Math.min(7, view.k * f));
     view.tx = x - (x - view.tx) * (k / view.k); view.ty = y - (y - view.ty) * (k / view.k); view.k = k;
-    clampView(); parts = []; drawMap(); syncViewBtns();
+    clampView(); requestDraw(); syncViewBtns();
   }
   function clampView() {
     const m = 80;
