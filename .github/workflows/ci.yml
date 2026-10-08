@@ -1,0 +1,30 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 테스트 (리소스 경고도 실패로 처리)
+        run: python -W error::ResourceWarning -m unittest discover -s tests -v
+      - name: 데모 데이터로 페이지 빌드
+        run: python pipeline/run.py demo
+      - name: 페이지 스크립트 문법 검사
+        run: |
+          node -e "
+            const s = require('fs').readFileSync('dist/index.html', 'utf8');
+            const m = s.match(/<script>([\s\S]*)<\/script>/);
+            new Function(m[1]);
+            console.log('ok', (s.length / 1e6).toFixed(2) + ' MB');
+          "
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: dist/index.html

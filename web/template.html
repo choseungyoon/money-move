@@ -56,6 +56,12 @@ button, input { font: inherit; color: inherit; }
 .chk { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
 .chk input { accent-color: var(--flap-ink); width: 15px; height: 15px; }
 .views { display: inline-flex; gap: 6px; margin-left: auto; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.seg button { border: 0; background: var(--panel); padding: 6px 12px; cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--land); color: var(--fg); }
+.nodata { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); max-width: calc(100% - 100px); padding: 8px 14px; border: 1px dashed var(--move); border-radius: var(--r); background: var(--panel); font-size: 12px; text-align: center; }
+.nodata b { color: var(--fg); }
 .btn { border: 1px solid var(--line); background: var(--panel); padding: 6px 12px; border-radius: var(--r); cursor: pointer; color: var(--fg); }
 .btn:hover { border-color: var(--muted); }
 .btn[aria-pressed="true"] { border-color: var(--flap-ink); color: var(--flap-ink); }
@@ -191,6 +197,10 @@ button, input { font: inherit; color: inherit; }
       <button class="tab" role="tab" id="tab-rent" data-layer="rent" style="--c: var(--rent)"><i></i>전월세 보증금</button>
       <button class="tab" role="tab" id="tab-move" data-layer="move" style="--c: var(--move)"><i></i>인구 이동</button>
     </div>
+    <div class="seg" id="tmode" role="group" aria-label="매매 금액 기준">
+      <button id="tm-trade" data-mode="trade" aria-pressed="true">거래대금</button>
+      <button id="tm-equity" data-mode="equity" aria-pressed="false">자기자본 추정</button>
+    </div>
     <label class="chk"><input type="checkbox" id="noncap"> 비수도권 출발·도착 포함</label>
     <div class="views">
       <button class="btn" id="view-all" aria-pressed="true">수도권 전체</button>
@@ -211,6 +221,7 @@ button, input { font: inherit; color: inherit; }
       <div class="legend" id="legend"></div>
       <div class="hint">지역 클릭 → 유입·유출 상세 · 휠/드래그로 확대·이동</div>
       <div class="tip" id="tip" hidden></div>
+      <div class="nodata" id="nodata" hidden></div>
     </div>
 
     <aside class="side">
@@ -259,12 +270,18 @@ button, input { font: inherit; color: inherit; }
 금액(i→j) = F(i→j) × 평균거래가(j)</div>
       <h4>전월세 보증금 흐름</h4>
       <div class="formula">R(i→j) = 신규계약(j) × 이주OD(i→j) / Σ_i 이주OD(i→j)      ※ 갱신계약은 이사가 없으므로 제외</div>
+      <h4>자기자본 추정 (가정 기반)</h4>
+      <div class="formula">자기자본 = 가격 − 0.65 × min(LTV × 가격, 주담대 한도)      ※ 거래 1건마다 계산
+LTV: 규제지역 50% (10·15 이후 40%), 비규제 70%
+한도: 6·27 이후 6억 · 10·15 이후 15억 이하 6억 / 15~25억 4억 / 25억 초과 2억</div>
+      <p>0.65는 매수자 중 주담대를 쓰는 비율과 한도 소진율을 합친 가정값입니다. DSR, 주택 수, 생애최초 특례, 승계 전세금(갭투자)은 반영하지 않았습니다. 규모를 가늠하는 용도로만 보세요.</p>
       <h4>해석할 때 주의할 점</h4>
       <ul>
         <li>거래금액은 실제로 이동한 현금이 아닙니다. 15억 아파트를 사도 대출과 승계 전세금을 빼면 매수자 지역에서 빠져나간 자기자본은 훨씬 적습니다.</li>
         <li>실거래 신고기한이 계약 후 30일이라 최근 1~2개월은 과소 집계됩니다. 실데이터 모드에서는 해당 월에 '잠정' 표시가 붙습니다.</li>
         <li>'지방'은 비수도권 전체를 묶은 노드라 개별 시군보다 크게 보입니다. 필요하면 끄고 보세요.</li>
-        <li>법인·외국인 매수는 별도로 구분하지 않았습니다.</li>
+        <li>법인 매수는 실거래의 매수자 구분으로 집계해 지역 정보에 표시합니다. 흐름 배분에는 개인과 같은 방식을 씁니다. 외국인은 구분하지 않았습니다.</li>
+        <li>인구이동 통계는 실거래보다 늦게 공개됩니다. 아직 공개되지 않은 달은 직전 12개월 이주 자료로 매매·전월세 출발지를 배분하고, 안내판 아래에 그 기간을 표시합니다.</li>
         <li id="demo-note">지금 화면은 중력모형으로 만든 시연용 데이터입니다. 정책 시점(2025.3 토허제, 10·15 대책)의 효과는 시나리오로 넣은 것이며 실제 통계가 아닙니다. 파이프라인에 API 키를 넣고 실행하면 같은 화면이 실데이터로 바뀝니다.</li>
       </ul>
     </div>
@@ -287,15 +304,19 @@ const D = /*__DATA__*/null;
     trade: { name: "매매 자금", color: C.trade, vName: "금액", cName: "건", key: 3, unit: "억" },
     rent: { name: "전월세 보증금", color: C.rent, vName: "보증금", cName: "건", key: 3, unit: "억" },
     move: { name: "인구 이동", color: C.move, vName: "인원", cName: "", key: 2, unit: "명" },
+    equity: { name: "매매 자기자본(추정)", color: C.trade, vName: "자기자본", cName: "건", key: 3, unit: "억" },
   };
+  const tabOf = (l) => (l === "equity" ? "trade" : l);
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const months = D.meta.months;
   const nodes = D.nodes;
   const NONCAP = nodes.length - 1;
+  const odMissing = new Set(D.meta.od_missing || []);  // 인구이동 통계 공개 전인 달
+  const lastOd = months.filter((m) => !odMissing.has(m)).pop();
   const SEOUL = new Set(nodes.map((n, i) => n.sido === "서울" ? i : -1).filter((i) => i >= 0));
 
-  const st = { layer: "trade", mi: months.length - 1, noncap: false, focus: null, hover: null, hl: null, playing: false };
-  try { const s = localStorage.getItem("mf-layer"); if (s && LAYERS[s]) st.layer = s; } catch (e) {}
+  const st = { layer: "trade", tmode: "trade", mi: months.length - 1, noncap: false, focus: null, hover: null, hl: null, playing: false };
+  try { const s = localStorage.getItem("mf-layer"); if (s && LAYERS[s]) { st.layer = s; if (tabOf(s) === "trade") st.tmode = s; } } catch (e) {}
 
   /* ---------- 숫자 표기 ---------- */
   const nf = new Intl.NumberFormat("ko-KR");
@@ -553,6 +574,13 @@ const D = /*__DATA__*/null;
       ["수도권 매매 거래대금", sum(1), eok], ["매매 건수", sum(0), (v) => nf.format(v) + "건"],
       ["서울 → 경기·인천 자금", outS(1), eok], ["시군구 밖 매수자 비중", cross / Math.max(1, sum(0)) * 100, (v) => v.toFixed(1) + "%", true],
     ];
+    if (st.layer === "equity") {
+      const v = sum(1), e = sum(6);
+      return [
+        ["추정 자기자본 총액", e, eok], ["거래대금 대비 자기자본", e / Math.max(1, v) * 100, (x) => x.toFixed(1) + "%", true],
+        ["서울 → 경기·인천 자기자본", outS(1), eok], ["대출로 조달한 추정액", v - e, eok],
+      ];
+    }
     if (st.layer === "rent") {
       const newDep = b.reduce((s, r, i) => s + (i === NONCAP || !r[2] ? 0 : r[4] * r[3] / r[2]), 0);
       return [
@@ -565,8 +593,13 @@ const D = /*__DATA__*/null;
       ["경기·인천 → 서울", inS(0), (v) => nf.format(v) + "명"], ["서울 순유출", outS(0) - inS(0), (v) => nf.format(v) + "명"],
     ];
   }
+  const odGap = (mi) => st.layer === "move" && odMissing.has(months[mi]);
   function drawKpis() {
-    const now = kpiVals(st.mi), prev = st.mi ? kpiVals(st.mi - 1) : null;
+    const now = kpiVals(st.mi), prev = st.mi && !odGap(st.mi - 1) ? kpiVals(st.mi - 1) : null;
+    if (odGap(st.mi)) {
+      $("#kpis").innerHTML = now.map(([k]) => `<div class="kpi"><span class="k">${k}</span><span class="v">—</span><span class="d">통계 공개 전</span></div>`).join("");
+      return;
+    }
     $("#kpis").innerHTML = now.map(([k, v, fmt, isPct], i) => {
       let d = "전월 자료 없음";
       if (prev) {
@@ -621,9 +654,19 @@ const D = /*__DATA__*/null;
       cells[4].className = "cell-flip " + s[0];
     });
     const unit = st.layer === "move" ? "인원: 명" : "금액: 억원 (1조 이상은 조)";
-    $("#board-f").textContent = `${unit} · 상태는 같은 노선의 전월 대비 · 행에 올리면 지도에서 강조`;
+    const win = (D.meta.od_window || {})[months[st.mi]];
+    const odNote = st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}–${ymLabel(win[1])} 인구이동 기준` : "";
+    $("#board-f").textContent = odGap(st.mi) ? `${ymLabel(months[st.mi])} 인구이동 통계가 공개되면 여기에 노선이 표시됩니다.`
+      : `${unit} · 상태는 같은 노선의 전월 대비${odNote}`;
   }
   function setHl(k) { st.hl = k || null; [...board.children].forEach((tr) => tr.classList.toggle("hl", tr.dataset.k === k)); drawMap(); }
+
+  /* ---------- 인구이동 공개 전 ---------- */
+  function drawNoData() {
+    const el = $("#nodata"), miss = st.layer === "move" && odMissing.has(months[st.mi]);
+    el.hidden = !miss;
+    if (miss) el.innerHTML = `<b>${ymLabel(months[st.mi])} 인구이동 통계는 아직 공개 전입니다.</b><br>가장 최근 공개분은 ${ymLabel(lastOd)}입니다.`;
+  }
 
   /* ---------- 지역 상세 ---------- */
   const focusEl = $("#focus");
@@ -642,6 +685,8 @@ const D = /*__DATA__*/null;
     const chips = i === NONCAP ? "" : `<div class="chips">
       <span class="chip">매매 <b>${nf.format(b[0])}</b>건</span>
       <span class="chip">평균 <b>${b[0] ? (b[1] / b[0]).toFixed(1) : "—"}</b>억</span>
+      <span class="chip">법인 매수 <b>${nf.format(b[5])}</b>건 · ${b[0] ? (b[5] / b[0] * 100).toFixed(1) : "0"}%</span>
+      <span class="chip">자기자본 비중 <b>${b[1] ? Math.round(b[6] / b[1] * 100) : "—"}</b>%</span>
       <span class="chip">전월세 신규 <b>${nf.format(b[3])}</b>건</span>
       <span class="chip">구 내부 ${st.layer === "move" ? "이동" : "거래"} <b>${nf.format(Math.round(ld.stats[i][4]))}</b>${st.layer === "move" ? "명" : "건"}</span></div>`;
     focusEl.innerHTML = `
@@ -679,6 +724,10 @@ const D = /*__DATA__*/null;
     vals.forEach((v, i) => {
       const x = i * bw + gap / 2, bh = Math.max(1, h - bot - y(v)), on = i === st.mi;
       const prov = D.meta.provisional.includes(months[i]);
+      if (st.layer === "move" && odMissing.has(months[i])) {
+        out += `<rect class="bar-m" data-i="${i}" x="${x + 0.5}" y="${top + 20}" width="${bw - gap - 1}" height="${h - bot - top - 20}" rx="3" fill="${C.ink}" stroke="${on ? C.flap : C.line}" stroke-dasharray="3 3"><title>${ymLabel(months[i])} · 공개 전</title></rect>`;
+        return;
+      }
       out += `<path class="bar-m" data-i="${i}" d="M${x},${h - bot} V${h - bot - bh + 4} q0,-4 4,-4 H${x + bw - gap - 4} q4,0 4,4 V${h - bot} Z" fill="${on ? L.color : mix(L.color, 0.42)}" ${prov ? 'fill-opacity="0.45"' : ""}><title>${ymLabel(months[i])} · ${metric(v, st.layer)}${prov ? " (잠정)" : ""}</title></path>`;
       if (months[i].endsWith("-01")) out += `<text x="${x}" y="${h - 3}" fill="${C.muted}" font-size="10" font-family="${tok("--font-num")}">${months[i].slice(0, 4)}</text>`;
     });
@@ -702,8 +751,8 @@ const D = /*__DATA__*/null;
   function drawLegend() {
     const L = LAYERS[st.layer];
     $("#legend").innerHTML = `
-      <div class="row"><span class="arc" style="--c:${L.color}"></span>${L.name} 흐름 · 굵기 = ${st.layer === "move" ? "인원" : "금액"}</div>
-      <div class="desc">시군구 색 = 순${st.layer === "move" ? "유입 인구" : "유입 " + (st.layer === "trade" ? "자금" : "보증금")}</div>
+      <div class="row"><span class="arc" style="--c:${L.color}"></span>${L.name} 흐름 · 굵기 = ${L.vName}</div>
+      <div class="desc">시군구 색 = 순유입 ${{ trade: "자금", equity: "자기자본", rent: "보증금", move: "인구" }[st.layer]}</div>
       <div class="ramp"></div><div class="ends"><span>순유출</span><span>균형</span><span>순유입</span></div>`;
   }
 
@@ -714,7 +763,7 @@ const D = /*__DATA__*/null;
     const n = nodes[i], ld = layerData(), b = cur().base[i], s = io(i, ld);
     const net = s[0] - s[1];
     tip.innerHTML = `<h4>${n.short}<small>${n.sido}${n.short !== n.name ? " " + n.name : ""}</small></h4><dl>
-      ${i === NONCAP ? "" : `<dt>매매</dt><dd>${nf.format(b[0])}건 · ${eok(b[1])}</dd><dt>평균 거래가</dt><dd>${b[0] ? (b[1] / b[0]).toFixed(1) + "억" : "—"}</dd>`}
+      ${i === NONCAP ? "" : `<dt>매매</dt><dd>${nf.format(b[0])}건 · ${eok(b[1])}</dd><dt>평균 거래가</dt><dd>${b[0] ? (b[1] / b[0]).toFixed(1) + "억" : "—"}</dd><dt>법인 매수</dt><dd>${nf.format(b[5])}건</dd>`}
       <dt>유입</dt><dd>${metric(s[0], st.layer)}</dd><dt>유출</dt><dd>${metric(s[1], st.layer)}</dd>
       <dt>순${net >= 0 ? "유입" : "유출"}</dt><dd style="color:${net >= 0 ? "var(--up)" : "var(--down)"}">${metric(Math.abs(net), st.layer)}</dd></dl>`;
     tip.hidden = false;
@@ -790,10 +839,11 @@ const D = /*__DATA__*/null;
   $("#view-all").onclick = () => setView("all");
   $("#view-seoul").onclick = () => setView("seoul");
   $("#noncap").onchange = (e) => { st.noncap = e.target.checked; if (!st.noncap && st.focus === NONCAP) st.focus = null; parts = []; drawAll(); };
-  document.querySelectorAll(".tab").forEach((b) => b.onclick = () => setLayer(b.dataset.layer));
+  document.querySelectorAll(".tab").forEach((b) => b.onclick = () => setLayer(b.dataset.layer === "trade" ? st.tmode : b.dataset.layer));
+  document.querySelectorAll("#tmode button").forEach((b) => b.onclick = () => { st.tmode = b.dataset.mode; setLayer(st.tmode); });
   $(".tabs").addEventListener("keydown", (e) => {
-    const ks = Object.keys(LAYERS), i = ks.indexOf(st.layer);
-    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const n = ks[(i + (e.key === "ArrowRight" ? 1 : ks.length - 1)) % ks.length]; setLayer(n); $("#tab-" + n).focus(); }
+    const ks = ["trade", "rent", "move"], i = ks.indexOf(tabOf(st.layer));
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const n = ks[(i + (e.key === "ArrowRight" ? 1 : ks.length - 1)) % ks.length]; setLayer(n === "trade" ? st.tmode : n); $("#tab-" + n).focus(); }
   });
   function setLayer(l) {
     st.layer = l; parts = []; emit.clear();
@@ -823,7 +873,10 @@ const D = /*__DATA__*/null;
   });
 
   function drawAll() {
-    document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", b.dataset.layer === st.layer));
+    document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", b.dataset.layer === tabOf(st.layer)));
+    $("#tmode").hidden = tabOf(st.layer) !== "trade";
+    document.querySelectorAll("#tmode button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === st.layer));
+    drawNoData();
     range.value = st.mi;
     setClock(months[st.mi]);
     drawMap(); drawKpis(); drawBoard(); drawFocus(); drawSpark(); drawLegend();
