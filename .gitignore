@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+# 원천 데이터: MDIS 마이크로데이터는 재배포 금지 약관이 있으므로 절대 커밋하지 않는다
+data/raw/
+# 중간 산출물은 파이프라인으로 재생성
+data/interim/
+*.png
+.DS_Store
+# 빌드 산출물: CI가 생성·배포한다 (월마다 1.6MB씩 이력이 불어나는 것을 방지)
+dist/
+data/flows.json

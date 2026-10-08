@@ -1,0 +1,838 @@
+<title>수도권 머니 플라이트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600&display=swap">
+<style>
+/* Layout: 관제실 한 화면. 왼쪽 항적 지도, 오른쪽 출발 안내판, 아래 월별 타임라인. 의도적 단일 다크 테마. */
+:root {
+  color-scheme: dark;
+  --ink: #070b14;          /* 바탕 */
+  --panel: #0c1322;        /* 패널 */
+  --land: #132036;         /* 육지 */
+  --line: #24344f;         /* 경계·괘선 */
+  --fg: #e4eaf5;           /* 본문 */
+  --muted: #8494b3;        /* 보조 텍스트 */
+  --flap: #0f151f;         /* 안내판 타일 */
+  --flap-ink: #f1d68c;     /* 안내판 글자 */
+  --trade: #c0821e;        /* 매매 자금 */
+  --rent: #1aa6b6;         /* 전월세 보증금 */
+  --move: #9673ea;         /* 인구 이동 */
+  --inflow: #bd772a;       /* 순유입 */
+  --outflow: #3f78c8;      /* 순유출 */
+  --up: #e9b35f;           /* 급증 텍스트 */
+  --down: #7fa6e0;         /* 감소 텍스트 */
+  --font-board: "Do Hyeon", "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+html, body { background: var(--ink); color: var(--fg); }
+[hidden] { display: none !important; }
+body { font-family: var(--font-body); font-size: 14px; line-height: 1.5; }
+.app { max-width: 1480px; margin: 0 auto; padding-inline: 20px; padding-block: 16px 40px; display: grid; gap: 14px; }
+button, input { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--flap-ink); outline-offset: 2px; }
+
+/* 상단 */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.brand { display: grid; gap: 2px; min-width: 0; }
+.brand h1 { margin: 0; font-family: var(--font-board); font-weight: 400; font-size: clamp(28px, 4vw, 40px); letter-spacing: .02em; line-height: 1.05; text-wrap: balance; }
+.brand h1 b { color: var(--flap-ink); font-weight: 400; }
+.brand p { margin: 0; color: var(--muted); font-family: var(--font-num); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+.top-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.demo { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px dashed var(--flap-ink); border-radius: var(--r); color: var(--flap-ink); font-size: 12px; }
+.demo strong { font-family: var(--font-num); letter-spacing: .12em; }
+.clock { display: flex; gap: 3px; }
+.clock span { display: grid; place-items: center; width: 26px; height: 38px; background: linear-gradient(var(--flap) 49%, var(--ink) 49% 51%, var(--flap) 51%); border-radius: 3px; font-family: var(--font-num); font-size: 22px; color: var(--flap-ink); font-variant-numeric: tabular-nums; }
+.clock span.sep { width: 10px; background: none; }
+
+/* 컨트롤 */
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.tabs { display: inline-flex; padding: 3px; gap: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.tab { border: 0; background: none; padding: 7px 14px; white-space: nowrap; border-radius: 5px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
+.tab i { width: 18px; height: 3px; border-radius: 2px; background: var(--c); }
+.tab[aria-selected="true"] { background: var(--land); color: var(--fg); }
+.tab:hover { color: var(--fg); }
+.chk { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; }
+.chk input { accent-color: var(--flap-ink); width: 15px; height: 15px; }
+.views { display: inline-flex; gap: 6px; margin-left: auto; }
+.btn { border: 1px solid var(--line); background: var(--panel); padding: 6px 12px; border-radius: var(--r); cursor: pointer; color: var(--fg); }
+.btn:hover { border-color: var(--muted); }
+.btn[aria-pressed="true"] { border-color: var(--flap-ink); color: var(--flap-ink); }
+
+/* KPI */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.kpi { background: var(--panel); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.kpi .k { color: var(--muted); font-size: 12px; }
+.kpi .v { font-family: var(--font-num); font-size: 22px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .d { font-family: var(--font-num); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.kpi .d .u { color: var(--up); } .kpi .d .dn { color: var(--down); }
+
+/* 무대 */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 14px; align-items: start; }
+.mapwrap { position: relative; height: clamp(540px, 76vh, 920px); background: radial-gradient(120% 90% at 55% 40%, #0d1830 0%, var(--ink) 70%); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; touch-action: none; }
+.mapwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#fx { pointer-events: none; }
+.legend { position: absolute; left: 12px; bottom: 12px; display: grid; gap: 6px; padding: 10px 12px; background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line); border-radius: var(--r); font-size: 12px; color: var(--muted); pointer-events: none; }
+.legend .ramp { width: 160px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, var(--outflow), var(--land) 50%, var(--inflow)); }
+.legend .ends { display: flex; justify-content: space-between; font-size: 11px; }
+.legend .row { display: flex; align-items: center; gap: 8px; }
+.legend .arc { width: 26px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--c)); }
+.zoom { position: absolute; right: 12px; top: 12px; display: grid; gap: 4px; }
+.zoom button { width: 32px; height: 32px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); cursor: pointer; font-family: var(--font-num); font-size: 16px; color: var(--fg); }
+.hint { position: absolute; right: 12px; bottom: 12px; font-size: 11px; color: var(--muted); pointer-events: none; text-align: right; }
+.tip { position: absolute; pointer-events: none; min-width: 200px; max-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; font-size: 12px; box-shadow: 0 10px 30px #0008; z-index: 3; }
+.tip h4 { margin: 0 0 6px; font-size: 14px; font-weight: 600; }
+.tip h4 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.tip dl { margin: 0; display: grid; grid-template-columns: auto auto; gap: 2px 14px; }
+.tip dt { color: var(--muted); } .tip dd { margin: 0; text-align: right; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+/* 출발 안내판 */
+.side { display: grid; gap: 14px; min-width: 0; }
+.board { background: #05080e; border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 8px; }
+.board-h { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.board-h h2 { margin: 0; font-family: var(--font-board); font-weight: 400; font-size: 24px; color: var(--flap-ink); letter-spacing: .04em; }
+.board-h h2 span { font-family: var(--font-num); font-size: 12px; letter-spacing: .2em; color: var(--muted); margin-left: 8px; }
+.board-h small { color: var(--muted); font-size: 11px; }
+.btable { width: 100%; border-collapse: separate; border-spacing: 0 3px; table-layout: fixed; }
+.btable th { font-family: var(--font-num); font-size: 10px; letter-spacing: .14em; color: var(--muted); font-weight: 400; text-align: left; padding: 0 4px; }
+.btable th.n, .btable td.n { text-align: right; }
+.btable td { background: linear-gradient(var(--flap) 49%, #05080e 49% 51%, var(--flap) 51%); padding: 6px 6px; font-family: var(--font-board); font-size: 16px; color: var(--flap-ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.btable td.n { font-family: var(--font-num); font-size: 13px; font-variant-numeric: tabular-nums; }
+.btable td:first-child { border-radius: 3px 0 0 3px; } .btable td:last-child { border-radius: 0 3px 3px 0; }
+.btable tr { cursor: pointer; }
+.btable tbody tr:hover td, .btable tbody tr.hl td { color: #fff6da; }
+.btable td.st { font-family: var(--font-body); font-size: 11px; }
+.st .up { color: var(--up); } .st .down { color: var(--down); } .st .new { color: var(--fg); } .st .flat { color: var(--muted); }
+.btable td .dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: middle; }
+.cell-flip { display: inline-block; transform-origin: 50% 50%; }
+.board-f { font-size: 11px; color: var(--muted); }
+
+/* 지역 상세 */
+.focus { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 12px; }
+.focus-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.focus-h h3 { margin: 0; font-family: var(--font-board); font-weight: 400; font-size: 26px; line-height: 1.1; }
+.focus-h h3 small { display: block; font-family: var(--font-body); font-size: 12px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); }
+.chip b { color: var(--fg); font-family: var(--font-num); font-weight: 500; }
+.net { font-family: var(--font-num); font-size: 13px; }
+.bars { display: grid; gap: 4px; }
+.bars h4 { margin: 0 0 2px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.bar { display: grid; grid-template-columns: 88px minmax(0, 1fr) 72px; align-items: center; gap: 8px; font-size: 12px; cursor: pointer; }
+.bar .lbl { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bar .trk { height: 8px; background: var(--ink); border-radius: 2px; overflow: hidden; }
+.bar .trk i { display: block; height: 100%; border-radius: 0 4px 4px 0; background: var(--c); }
+.bar .val { text-align: right; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.bar:hover .lbl { color: var(--flap-ink); }
+.empty { color: var(--muted); font-size: 12px; }
+
+/* 타임라인 */
+.timeline { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+.play { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--flap-ink); background: none; color: var(--flap-ink); cursor: pointer; font-size: 16px; }
+.tl-main { display: grid; gap: 4px; min-width: 0; }
+.tl-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
+.tl-head b { color: var(--fg); font-weight: 500; }
+#spark { width: 100%; height: 100px; display: block; }
+#spark .bar-m { cursor: pointer; }
+#month { width: 100%; accent-color: var(--flap-ink); margin: 0; }
+
+/* 방법론 */
+.method { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 0 16px; }
+.method summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
+.method summary span { color: var(--muted); font-weight: 400; margin-left: 8px; font-size: 12px; }
+.method .body { padding-bottom: 16px; display: grid; gap: 14px; max-width: 900px; }
+.method p, .method li { color: var(--fg); max-width: 72ch; }
+.method h4 { margin: 4px 0 0; font-size: 13px; color: var(--flap-ink); font-weight: 500; }
+.method code { font-family: var(--font-num); font-size: 12px; background: var(--ink); padding: 1px 5px; border-radius: 3px; }
+.tablewrap { overflow-x: auto; }
+.src { border-collapse: collapse; font-size: 12px; min-width: 620px; }
+.src th, .src td { border-bottom: 1px solid var(--line); padding: 7px 10px 7px 0; text-align: left; vertical-align: top; }
+.src th { color: var(--muted); font-weight: 500; }
+.formula { font-family: var(--font-num); font-size: 12px; background: var(--ink); padding: 10px 12px; border-radius: var(--r); overflow-x: auto; white-space: pre; }
+
+@media (max-width: 1080px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .mapwrap { height: auto; aspect-ratio: 4 / 5; max-height: 86vh; }
+}
+@media (max-width: 640px) {
+  .app { padding-inline: 16px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .views { margin-left: 0; }
+  .kpi .v { font-size: 18px; }
+  .legend { left: 8px; bottom: 8px; padding: 6px 8px; font-size: 11px; }
+  .legend .row, .legend .desc { display: none; }
+  .legend .ramp { width: 110px; }
+  .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
+  .tab { padding: 7px 4px; justify-content: center; gap: 6px; font-size: 13px; }
+  .tab i { width: 10px; }
+  .hint { display: none; }
+  .clock span { width: 20px; height: 30px; font-size: 17px; }
+  .btable td { font-size: 14px; }
+  .bar { grid-template-columns: 72px minmax(0, 1fr) 64px; }
+}
+</style>
+
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <h1>수도권 <b>머니 플라이트</b></h1>
+      <p>Seoul Capital Area · Apartment Liquidity Board · 77 시군구</p>
+    </div>
+    <div class="top-right">
+      <div class="demo" id="demo"><strong>DEMO</strong><span>추정 모형 시연용 데이터 · 실제 통계 아님</span></div>
+      <div class="clock" id="clock" aria-live="polite"></div>
+    </div>
+  </header>
+
+  <section class="controls" aria-label="보기 설정">
+    <div class="tabs" role="tablist" aria-label="흐름 종류">
+      <button class="tab" role="tab" id="tab-trade" data-layer="trade" style="--c: var(--trade)"><i></i>매매 자금</button>
+      <button class="tab" role="tab" id="tab-rent" data-layer="rent" style="--c: var(--rent)"><i></i>전월세 보증금</button>
+      <button class="tab" role="tab" id="tab-move" data-layer="move" style="--c: var(--move)"><i></i>인구 이동</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="noncap"> 비수도권 출발·도착 포함</label>
+    <div class="views">
+      <button class="btn" id="view-all" aria-pressed="true">수도권 전체</button>
+      <button class="btn" id="view-seoul" aria-pressed="false">서울 확대</button>
+    </div>
+  </section>
+
+  <section class="kpis" id="kpis" aria-label="이달의 핵심 지표"></section>
+
+  <main class="stage">
+    <div class="mapwrap" id="mapwrap">
+      <canvas id="map" aria-label="수도권 시군구 간 흐름 지도" role="img"></canvas>
+      <canvas id="fx"></canvas>
+      <div class="zoom">
+        <button id="zin" aria-label="확대">+</button>
+        <button id="zout" aria-label="축소">−</button>
+      </div>
+      <div class="legend" id="legend"></div>
+      <div class="hint">지역 클릭 → 유입·유출 상세 · 휠/드래그로 확대·이동</div>
+      <div class="tip" id="tip" hidden></div>
+    </div>
+
+    <aside class="side">
+      <div class="board">
+        <div class="board-h">
+          <h2>출발<span>DEPARTURES</span></h2>
+          <small id="board-sub"></small>
+        </div>
+        <table class="btable" aria-label="이달의 상위 흐름">
+          <colgroup><col style="width:27%"><col style="width:27%"><col style="width:20%"><col style="width:12%"><col style="width:14%"></colgroup>
+          <thead><tr><th>FROM</th><th>TO</th><th class="n" id="th-v">금액</th><th class="n" id="th-c">건</th><th>상태</th></tr></thead>
+          <tbody id="board"></tbody>
+        </table>
+        <div class="board-f" id="board-f"></div>
+      </div>
+      <div class="focus" id="focus" hidden></div>
+    </aside>
+  </main>
+
+  <section class="timeline" aria-label="월 선택">
+    <button class="play" id="play" aria-label="재생">▶</button>
+    <div class="tl-main">
+      <div class="tl-head"><span id="tl-title"></span><span id="tl-month"></span></div>
+      <svg id="spark" role="img" aria-label="월별 시군구 간 흐름 규모"></svg>
+      <input type="range" id="month" min="0" max="0" step="1" aria-label="월">
+    </div>
+  </section>
+
+  <details class="method" id="method">
+    <summary>이 흐름은 어떻게 추정했나<span>데이터 출처 · 모형 · 한계</span></summary>
+    <div class="body">
+      <p>아파트 실거래 자료에는 매물의 위치와 가격만 있고, 매수자가 어디에서 왔는지는 공개되지 않습니다. 그래서 지도 위 화살표 중 <b>인구 이동만 실측 OD</b>이고, 매매 자금과 전월세 보증금은 아래 세 자료를 결합해 추정한 값입니다.</p>
+      <div class="tablewrap">
+        <table class="src">
+          <thead><tr><th>자료</th><th>제공처</th><th>쓰는 정보</th><th>단위</th></tr></thead>
+          <tbody>
+            <tr><td>아파트 매매·전월세 실거래가</td><td>국토교통부 (공공데이터포털 API)</td><td>거래 건수, 거래금액, 보증금, 신규/갱신, 해제 여부</td><td>시군구 · 월</td></tr>
+            <tr><td>매입자거주지별 아파트매매거래</td><td>한국부동산원 R-ONE</td><td>관할 시군구 내 / 시도 내 / 서울 / 기타 비중</td><td>시군구 · 월</td></tr>
+            <tr><td>국내인구이동통계 (마이크로데이터)</td><td>통계청 MDIS</td><td>전출지→전입지 OD, 전입사유 '주택'</td><td>시군구 · 월</td></tr>
+            <tr><td>행정동 경계</td><td>vuski/admdongkor (2023.07)</td><td>시군구 경계 병합</td><td>—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <h4>매매 자금 흐름</h4>
+      <div class="formula">F(i→j) = 거래건수(j) × 매입자거주지비중(j, 버킷) × 이주OD(i→j, 최근12개월) / Σ 버킷 내 이주OD
+금액(i→j) = F(i→j) × 평균거래가(j)</div>
+      <h4>전월세 보증금 흐름</h4>
+      <div class="formula">R(i→j) = 신규계약(j) × 이주OD(i→j) / Σ_i 이주OD(i→j)      ※ 갱신계약은 이사가 없으므로 제외</div>
+      <h4>해석할 때 주의할 점</h4>
+      <ul>
+        <li>거래금액은 실제로 이동한 현금이 아닙니다. 15억 아파트를 사도 대출과 승계 전세금을 빼면 매수자 지역에서 빠져나간 자기자본은 훨씬 적습니다.</li>
+        <li>실거래 신고기한이 계약 후 30일이라 최근 1~2개월은 과소 집계됩니다. 실데이터 모드에서는 해당 월에 '잠정' 표시가 붙습니다.</li>
+        <li>'지방'은 비수도권 전체를 묶은 노드라 개별 시군보다 크게 보입니다. 필요하면 끄고 보세요.</li>
+        <li>법인·외국인 매수는 별도로 구분하지 않았습니다.</li>
+        <li id="demo-note">지금 화면은 중력모형으로 만든 시연용 데이터입니다. 정책 시점(2025.3 토허제, 10·15 대책)의 효과는 시나리오로 넣은 것이며 실제 통계가 아닙니다. 파이프라인에 API 키를 넣고 실행하면 같은 화면이 실데이터로 바뀝니다.</li>
+      </ul>
+    </div>
+  </details>
+</div>
+
+<script>
+const D = /*__DATA__*/null;
+(() => {
+  "use strict";
+  const $ = (s) => document.querySelector(s);
+  const css = getComputedStyle(document.documentElement);
+  const tok = (n) => css.getPropertyValue(n).trim();
+  const C = {
+    land: tok("--land"), line: tok("--line"), fg: tok("--fg"), muted: tok("--muted"), ink: tok("--ink"),
+    inflow: tok("--inflow"), outflow: tok("--outflow"), flap: tok("--flap-ink"),
+    trade: tok("--trade"), rent: tok("--rent"), move: tok("--move"),
+  };
+  const LAYERS = {
+    trade: { name: "매매 자금", color: C.trade, vName: "금액", cName: "건", key: 3, unit: "억" },
+    rent: { name: "전월세 보증금", color: C.rent, vName: "보증금", cName: "건", key: 3, unit: "억" },
+    move: { name: "인구 이동", color: C.move, vName: "인원", cName: "", key: 2, unit: "명" },
+  };
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const months = D.meta.months;
+  const nodes = D.nodes;
+  const NONCAP = nodes.length - 1;
+  const SEOUL = new Set(nodes.map((n, i) => n.sido === "서울" ? i : -1).filter((i) => i >= 0));
+
+  const st = { layer: "trade", mi: months.length - 1, noncap: false, focus: null, hover: null, hl: null, playing: false };
+  try { const s = localStorage.getItem("mf-layer"); if (s && LAYERS[s]) st.layer = s; } catch (e) {}
+
+  /* ---------- 숫자 표기 ---------- */
+  const nf = new Intl.NumberFormat("ko-KR");
+  const eok = (v) => v >= 10000 ? (v / 10000).toFixed(v >= 100000 ? 1 : 2) + "조" : nf.format(Math.round(v)) + "억";
+  const metric = (v, layer) => layer === "move" ? nf.format(Math.round(v)) + "명" : eok(v);
+  const pct = (a, b) => b ? (a / b - 1) * 100 : null;
+  const ymLabel = (ym) => ym.replace("-", ".");
+
+  /* ---------- 레이어별 전역 최대값 (월 간 비교가 되도록 고정 스케일) ---------- */
+  const vmax = {};
+  for (const L in LAYERS) {
+    let m = 0;
+    for (const ym of months) for (const f of D.months[ym].layers[L].flows) m = Math.max(m, f[LAYERS[L].key]);
+    vmax[L] = m;
+  }
+
+  /* ---------- 투영 ---------- */
+  const BB = [126.30, 36.70, 127.90, 38.32];
+  const KX = Math.cos(37.5 * Math.PI / 180);
+  const map = $("#map"), fx = $("#fx"), wrap = $("#mapwrap");
+  const mctx = map.getContext("2d"), fctx = fx.getContext("2d");
+  let W = 0, H = 0, DPR = 1, S = 1, OX = 0, OY = 0;
+  const view = { k: 1, tx: 0, ty: 0 };
+  const P = (lon, lat) => [OX + (lon - BB[0]) * KX * S, OY + (BB[3] - lat) * S];
+  let paths = [], anchors = [];
+
+  function layout() {
+    const r = wrap.getBoundingClientRect();
+    W = r.width; H = r.height; DPR = Math.min(2, window.devicePixelRatio || 1);
+    for (const c of [map, fx]) { c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); }
+    const pad = 18;
+    S = Math.min((W - 2 * pad) / ((BB[2] - BB[0]) * KX), (H - 2 * pad) / (BB[3] - BB[1]));
+    OX = (W - (BB[2] - BB[0]) * KX * S) / 2; OY = (H - (BB[3] - BB[1]) * S) / 2;
+    paths = nodes.map((n) => {
+      const p = new Path2D();
+      for (const ring of n.rings) {
+        for (let i = 0; i < ring.length; i += 2) {
+          const [x, y] = P(ring[i], ring[i + 1]);
+          i ? p.lineTo(x, y) : p.moveTo(x, y);
+        }
+        p.closePath();
+      }
+      return p;
+    });
+    anchors = nodes.map((n) => P(n.ax, n.ay));
+  }
+  const toScreen = ([x, y]) => [x * view.k + view.tx, y * view.k + view.ty];
+  const toBase = (x, y) => [(x - view.tx) / view.k, (y - view.ty) / view.k];
+
+  /* ---------- 현재 상태에서 쓰는 데이터 ---------- */
+  const cur = () => D.months[months[st.mi]];
+  const layerData = (mi = st.mi) => D.months[months[mi]].layers[st.layer];
+  const okNode = (i) => st.noncap || i !== NONCAP;
+
+  function shownFlows() {
+    const L = LAYERS[st.layer], ld = layerData();
+    let fl = ld.flows.filter((f) => okNode(f[0]) && okNode(f[1]));
+    if (st.focus != null) fl = fl.filter((f) => f[0] === st.focus || f[1] === st.focus);
+    fl.sort((a, b) => b[L.key] - a[L.key]);
+    const cap = st.focus != null ? 24 : W < 640 ? 45 : 80;
+    return fl.slice(0, cap);
+  }
+  // [유입, 유출, 내부] — 비수도권을 끈 경우 비수도권 상대분을 뺀다
+  function io(i, ld = layerData()) {
+    const s = ld.stats[i], k = st.layer === "move" ? 0 : 2;
+    const nc = st.noncap ? [0, 0] : [s[6 + k], s[7 + k]];
+    return [s[k] - nc[0], s[k + 1] - nc[1], s[k === 0 ? 4 : 5]];
+  }
+  function netOf(i, ld = layerData()) { const [a, b] = io(i, ld); return a - b; }
+
+  /* ---------- 곡선 ---------- */
+  function curve(f) {
+    const a = anchors[f[0]], b = anchors[f[1]];
+    const dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1;
+    const bend = 0.22;
+    const c = [(a[0] + b[0]) / 2 + (dy / d) * d * bend, (a[1] + b[1]) / 2 - (dx / d) * d * bend];
+    return [a, c, b];
+  }
+  const qpt = ([a, c, b], t) => {
+    const u = 1 - t;
+    return [u * u * a[0] + 2 * u * t * c[0] + t * t * b[0], u * u * a[1] + 2 * u * t * c[1] + t * t * b[1]];
+  };
+  const fkey = (f) => f[0] + ">" + f[1];
+
+  /* ---------- 지도(정적 레이어) ---------- */
+  let flowsNow = [];
+  function mix(hex, t) { // land 색과 hex를 t 비율로 섞음
+    const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+    const a = p(C.land), b = p(hex);
+    return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * t)).join(",")})`;
+  }
+  function drawMap() {
+    const ctx = mctx;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.setTransform(DPR * view.k, 0, 0, DPR * view.k, DPR * view.tx, DPR * view.ty);
+    const ld = layerData();
+    let nmax = 1;
+    for (let i = 0; i < NONCAP; i++) nmax = Math.max(nmax, Math.abs(netOf(i, ld)));
+    const lw = 1 / view.k;
+    // 시군구 채색: 순유입(주황) ↔ 순유출(파랑)
+    for (let i = 0; i < NONCAP; i++) {
+      const n = netOf(i, ld) / nmax;
+      const t = Math.min(1, Math.sqrt(Math.abs(n))) * 0.78;
+      ctx.fillStyle = n >= 0 ? mix(C.inflow, t) : mix(C.outflow, t);
+      ctx.fill(paths[i]);
+    }
+    // 시도 외곽선: 굵게 그린 뒤 같은 시도를 다시 칠해 안쪽 절반을 덮는다
+    for (const sido of ["서울", "인천"]) {
+      ctx.lineWidth = 3.2 * lw; ctx.strokeStyle = "#3b5179"; ctx.lineJoin = "round";
+      nodes.forEach((n, i) => { if (n.sido === sido) ctx.stroke(paths[i]); });
+    }
+    for (let i = 0; i < NONCAP; i++) {
+      const n = netOf(i, ld) / nmax, t = Math.min(1, Math.sqrt(Math.abs(n))) * 0.78;
+      if (nodes[i].sido !== "경기") { ctx.fillStyle = n >= 0 ? mix(C.inflow, t) : mix(C.outflow, t); ctx.fill(paths[i]); }
+    }
+    ctx.lineWidth = 0.7 * lw; ctx.strokeStyle = C.ink;
+    for (let i = 0; i < NONCAP; i++) ctx.stroke(paths[i]);
+    if (st.hover != null && st.hover !== NONCAP) { ctx.lineWidth = 2 * lw; ctx.strokeStyle = C.fg; ctx.stroke(paths[st.hover]); }
+    if (st.focus != null && st.focus !== NONCAP) { ctx.lineWidth = 2.4 * lw; ctx.strokeStyle = C.flap; ctx.stroke(paths[st.focus]); }
+
+    // 항적(정적 곡선)
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    const L = LAYERS[st.layer];
+    flowsNow = shownFlows();
+    const hlSet = st.hl;
+    for (const f of [...flowsNow].reverse()) {
+      const q = curve(f).map(toScreen);
+      const v = f[L.key] / vmax[st.layer];
+      const w = 0.6 + 6 * Math.sqrt(v);
+      const dim = hlSet && hlSet !== fkey(f);
+      const g = ctx.createLinearGradient(q[0][0], q[0][1], q[2][0], q[2][1]);
+      g.addColorStop(0, L.color + "10");
+      g.addColorStop(1, L.color + (dim ? "30" : "c0"));
+      ctx.strokeStyle = g; ctx.lineWidth = hlSet === fkey(f) ? w + 2 : w; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(...q[0]); ctx.quadraticCurveTo(...q[1], ...q[2]); ctx.stroke();
+      if (reduce) { // 움직임을 끈 경우 도착점에 화살촉
+        const p1 = qpt(q, 0.97), p2 = q[2], ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]), s = 4 + w;
+        ctx.fillStyle = L.color; ctx.beginPath(); ctx.moveTo(...p2);
+        ctx.lineTo(p2[0] - s * Math.cos(ang - .45), p2[1] - s * Math.sin(ang - .45));
+        ctx.lineTo(p2[0] - s * Math.cos(ang + .45), p2[1] - s * Math.sin(ang + .45)); ctx.fill();
+      }
+    }
+    drawAirports(ctx, ld);
+  }
+
+  function drawAirports(ctx, ld) {
+    const base = cur().base;
+    const vol = nodes.map((n, i) => io(i, ld).reduce((a, b) => a + b, 0)); // 유입 + 유출 + 내부
+    let vm = 1; vol.forEach((v, i) => { if (okNode(i)) vm = Math.max(vm, v); });
+    // 공항(앵커) 점
+    nodes.forEach((n, i) => {
+      if (!okNode(i)) return;
+      const [x, y] = toScreen(anchors[i]);
+      const r = 1.6 + 4.5 * Math.sqrt(vol[i] / vm);
+      ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 7); ctx.fill();
+      ctx.fillStyle = i === st.focus ? C.flap : C.fg; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    });
+    // 라벨: 활동량 순으로 배치하고 겹치면 건너뛴다
+    const order = nodes.map((_, i) => i).filter(okNode).sort((a, b) => {
+      const pa = (a === st.focus || a === st.hover) ? 1e18 : vol[a] + (a === NONCAP ? 1e17 : 0);
+      const pb = (b === st.focus || b === st.hover) ? 1e18 : vol[b] + (b === NONCAP ? 1e17 : 0);
+      return pb - pa;
+    });
+    const placed = [];
+    const fs = W < 640 ? 11 : 12;
+    for (const i of order) {
+      const n = nodes[i];
+      const [x, y] = toScreen(anchors[i]);
+      if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
+      const strong = i === st.focus || i === st.hover;
+      const label = i === NONCAP ? "비수도권 ▲" : n.short;
+      ctx.font = `${strong ? 600 : 500} ${strong ? fs + 2 : fs}px ${tok("--font-body")}`;
+      const tw = ctx.measureText(label).width;
+      const bx = [x - tw / 2 - 3, y + 6, tw + 6, fs + 4];
+      if (!strong && placed.some((p) => bx[0] < p[0] + p[2] && bx[0] + bx[2] > p[0] && bx[1] < p[1] + p[3] && bx[1] + bx[3] > p[1])) continue;
+      placed.push(bx);
+      ctx.lineWidth = 3; ctx.strokeStyle = C.ink; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.strokeText(label, x, y + 7);
+      ctx.fillStyle = strong ? C.flap : (i === NONCAP ? C.flap : C.fg);
+      ctx.globalAlpha = strong ? 1 : 0.86;
+      ctx.fillText(label, x, y + 7);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /* ---------- 파티클(항공기) ---------- */
+  let parts = [], emit = new Map(), last = performance.now();
+  function frame(now) {
+    const dt = Math.min(0.05, (now - last) / 1000); last = now;
+    const ctx = fctx;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    if (!reduce && !document.hidden) {
+      const L = LAYERS[st.layer];
+      const live = new Set();
+      for (const f of flowsNow) {
+        const k = fkey(f); live.add(k);
+        const v = f[L.key] / vmax[st.layer];
+        const acc = (emit.get(k) || Math.random()) + dt * (0.35 + 7 * v);
+        let n = Math.floor(acc); emit.set(k, acc - n);
+        const q = curve(f);
+        const len = Math.hypot(q[2][0] - q[0][0], q[2][1] - q[0][1]) * view.k * 1.15 + 30;
+        while (n-- > 0 && parts.length < 2600) parts.push({ f, k, t: 0, sp: (70 + 50 * Math.random()) / len, v });
+      }
+      ctx.globalCompositeOperation = "lighter";
+      const next = [];
+      for (const p of parts) {
+        if (!live.has(p.k)) continue;
+        p.t += p.sp * dt;
+        if (p.t >= 1) continue;
+        next.push(p);
+        const q = curve(p.f).map(toScreen);
+        const dim = st.hl && st.hl !== p.k;
+        const r = 1.1 + 2.4 * Math.sqrt(p.v);
+        for (let j = 3; j >= 0; j--) {
+          const t = Math.max(0, p.t - j * 0.018);
+          const [x, y] = qpt(q, t);
+          ctx.globalAlpha = (dim ? 0.15 : 1) * (j ? 0.22 / j : 0.95);
+          ctx.fillStyle = j ? L.color : "#fff3d6";
+          ctx.beginPath(); ctx.arc(x, y, j ? r * 1.6 : r, 0, 7); ctx.fill();
+        }
+        if (j0Glow(p)) { const [x, y] = q[2]; ctx.globalAlpha = 0.25; ctx.fillStyle = L.color; ctx.beginPath(); ctx.arc(x, y, r * 3, 0, 7); ctx.fill(); }
+      }
+      parts = next;
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+    }
+    requestAnimationFrame(frame);
+  }
+  const j0Glow = (p) => p.t > 0.96; // 도착 직전 착륙 글로우
+
+  /* ---------- 상단 시계(월) ---------- */
+  const clock = $("#clock");
+  function setClock(ym) {
+    const s = ymLabel(ym);
+    if (clock.children.length !== s.length) clock.innerHTML = [...s].map((ch) => `<span class="${ch === "." ? "sep" : ""}">${ch}</span>`).join("");
+    [...s].forEach((ch, i) => flip(clock.children[i], ch, i * 40));
+  }
+  function flip(el, text, delay = 0) {
+    if (el.textContent === text) return;
+    if (reduce || !el.animate) { el.textContent = text; return; }
+    const a = el.animate([{ transform: "rotateX(0)" }, { transform: "rotateX(-90deg)" }], { duration: 110, delay, fill: "forwards" });
+    a.onfinish = () => { el.textContent = text; el.animate([{ transform: "rotateX(90deg)" }, { transform: "rotateX(0)" }], { duration: 130, fill: "forwards" }); };
+  }
+
+  /* ---------- KPI ---------- */
+  function kpiVals(mi) {
+    const m = D.months[months[mi]], ld = m.layers[st.layer], b = m.base, sd = ld.sido;
+    const sum = (k) => b.reduce((s, r, i) => s + (i === NONCAP ? 0 : r[k]), 0);
+    const g = (k, j) => (sd[k] ? sd[k][j] : 0);
+    const cross = ld.stats.reduce((s, r, i) => s + (i === NONCAP ? 0 : r[0] - (st.noncap ? 0 : r[6])), 0);
+    const outS = (j) => g("서울>경기", j) + g("서울>인천", j);
+    const inS = (j) => g("경기>서울", j) + g("인천>서울", j);
+    if (st.layer === "trade") return [
+      ["수도권 매매 거래대금", sum(1), eok], ["매매 건수", sum(0), (v) => nf.format(v) + "건"],
+      ["서울 → 경기·인천 자금", outS(1), eok], ["시군구 밖 매수자 비중", cross / Math.max(1, sum(0)) * 100, (v) => v.toFixed(1) + "%", true],
+    ];
+    if (st.layer === "rent") {
+      const newDep = b.reduce((s, r, i) => s + (i === NONCAP || !r[2] ? 0 : r[4] * r[3] / r[2]), 0);
+      return [
+        ["신규 전월세 계약", sum(3), (v) => nf.format(v) + "건"], ["신규 보증금 총액", newDep, eok],
+        ["서울 → 경기·인천 보증금", outS(1), eok], ["서울 순유출 보증금", outS(1) - inS(1), eok],
+      ];
+    }
+    return [
+      ["시군구 간 이동 (주택 사유)", cross, (v) => nf.format(Math.round(v)) + "명"], ["서울 → 경기·인천", outS(0), (v) => nf.format(v) + "명"],
+      ["경기·인천 → 서울", inS(0), (v) => nf.format(v) + "명"], ["서울 순유출", outS(0) - inS(0), (v) => nf.format(v) + "명"],
+    ];
+  }
+  function drawKpis() {
+    const now = kpiVals(st.mi), prev = st.mi ? kpiVals(st.mi - 1) : null;
+    $("#kpis").innerHTML = now.map(([k, v, fmt, isPct], i) => {
+      let d = "전월 자료 없음";
+      if (prev) {
+        const pv = prev[i][1];
+        if (isPct) { const x = v - pv; d = `<span class="${x >= 0 ? "u" : "dn"}">${x >= 0 ? "▲" : "▼"} ${Math.abs(x).toFixed(1)}%p</span> 전월 대비`; }
+        else { const x = pct(v, pv); d = x == null || !isFinite(x) ? "—" : `<span class="${x >= 0 ? "u" : "dn"}">${x >= 0 ? "▲" : "▼"} ${Math.abs(x).toFixed(1)}%</span> 전월 대비`; }
+      }
+      return `<div class="kpi"><span class="k">${k}</span><span class="v">${fmt(v)}</span><span class="d">${d}</span></div>`;
+    }).join("");
+  }
+
+  /* ---------- 출발 안내판 ---------- */
+  const board = $("#board");
+  function drawBoard() {
+    const L = LAYERS[st.layer];
+    const prev = st.mi ? new Map(layerData(st.mi - 1).flows.map((f) => [fkey(f), f])) : new Map();
+    const rows = flowsNow.slice(0, 10);
+    $("#th-v").textContent = L.vName;
+    $("#th-c").textContent = st.layer === "move" ? "" : "건";
+    $("#board-sub").textContent = `${ymLabel(months[st.mi])} · ${L.name}${st.focus != null ? " · " + nodes[st.focus].short : ""}`;
+    while (board.children.length < rows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td><span class="cell-flip"></span></td><td><span class="dot"></span><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="st"><span class="cell-flip"></span></td>`;
+      tr.tabIndex = 0;
+      tr.addEventListener("mouseenter", () => setHl(tr.dataset.k));
+      tr.addEventListener("mouseleave", () => setHl(null));
+      tr.addEventListener("focus", () => setHl(tr.dataset.k));
+      tr.addEventListener("blur", () => setHl(null));
+      board.appendChild(tr);
+    }
+    [...board.children].forEach((tr, i) => {
+      const f = rows[i];
+      tr.hidden = !f;
+      if (!f) return;
+      tr.dataset.k = fkey(f);
+      tr.style.setProperty("--c", L.color);
+      const p = prev.get(fkey(f));
+      let s = ["new", "◆ 신규"];
+      if (p) {
+        const x = pct(f[L.key], p[L.key]);
+        s = x > 30 ? ["up", "▲ 급증"] : x < -25 ? ["down", "▼ 감소"] : ["flat", "– 유지"];
+      }
+      const cells = tr.querySelectorAll(".cell-flip");
+      const vals = [
+        f[0] === NONCAP ? "비수도권" : nodes[f[0]].short,
+        f[1] === NONCAP ? "비수도권" : nodes[f[1]].short,
+        st.layer === "move" ? nf.format(Math.round(f[2])) : eok(f[3]).replace("억", ""),
+        st.layer === "move" ? "" : nf.format(Math.round(f[2])),
+        s[1],
+      ];
+      vals.forEach((v, j) => flip(cells[j], v, i * 35 + j * 20));
+      cells[4].className = "cell-flip " + s[0];
+    });
+    const unit = st.layer === "move" ? "인원: 명" : "금액: 억원 (1조 이상은 조)";
+    $("#board-f").textContent = `${unit} · 상태는 같은 노선의 전월 대비 · 행에 올리면 지도에서 강조`;
+  }
+  function setHl(k) { st.hl = k || null; [...board.children].forEach((tr) => tr.classList.toggle("hl", tr.dataset.k === k)); drawMap(); }
+
+  /* ---------- 지역 상세 ---------- */
+  const focusEl = $("#focus");
+  function drawFocus() {
+    if (st.focus == null) { focusEl.hidden = true; return; }
+    const i = st.focus, n = nodes[i], L = LAYERS[st.layer], ld = layerData(), b = cur().base[i];
+    const s = io(i, ld);
+    const net = s[0] - s[1];
+    const all = ld.flows.filter((f) => okNode(f[0]) && okNode(f[1]));
+    const ins = all.filter((f) => f[1] === i).sort((a, c) => c[L.key] - a[L.key]).slice(0, 6);
+    const outs = all.filter((f) => f[0] === i).sort((a, c) => c[L.key] - a[L.key]).slice(0, 6);
+    const mx = Math.max(1, ...ins.map((f) => f[L.key]), ...outs.map((f) => f[L.key]));
+    const bars = (list, other, title) => `<div class="bars"><h4>${title}</h4>${list.length ? list.map((f) =>
+      `<div class="bar" data-node="${f[other]}" style="--c:${L.color}"><span class="lbl">${f[other] === NONCAP ? "비수도권" : nodes[f[other]].short}</span><span class="trk"><i style="width:${(f[L.key] / mx * 100).toFixed(1)}%"></i></span><span class="val">${metric(f[L.key], st.layer)}</span></div>`).join("")
+      : `<div class="empty">표시할 흐름이 없습니다.</div>`}</div>`;
+    const chips = i === NONCAP ? "" : `<div class="chips">
+      <span class="chip">매매 <b>${nf.format(b[0])}</b>건</span>
+      <span class="chip">평균 <b>${b[0] ? (b[1] / b[0]).toFixed(1) : "—"}</b>억</span>
+      <span class="chip">전월세 신규 <b>${nf.format(b[3])}</b>건</span>
+      <span class="chip">구 내부 ${st.layer === "move" ? "이동" : "거래"} <b>${nf.format(Math.round(ld.stats[i][4]))}</b>${st.layer === "move" ? "명" : "건"}</span></div>`;
+    focusEl.innerHTML = `
+      <div class="focus-h"><h3>${n.short === n.name ? n.name : n.short}<small>${n.sido} ${n.name} · ${ymLabel(months[st.mi])} · ${L.name}</small></h3>
+      <button class="btn" id="unfocus">닫기</button></div>
+      ${chips}
+      <div class="net">순${net >= 0 ? "유입" : "유출"} <b style="color:${net >= 0 ? "var(--up)" : "var(--down)"}">${net >= 0 ? "▲" : "▼"} ${metric(Math.abs(net), st.layer)}</b>
+        <span style="color:var(--muted)"> (유입 ${metric(s[0], st.layer)} · 유출 ${metric(s[1], st.layer)})</span></div>
+      ${bars(ins, 0, "어디서 들어왔나")}
+      ${bars(outs, 1, "어디로 나갔나")}`;
+    focusEl.hidden = false;
+    $("#unfocus").onclick = () => setFocus(null);
+    focusEl.querySelectorAll(".bar").forEach((el) => el.onclick = () => setFocus(+el.dataset.node));
+  }
+  function setFocus(i) {
+    st.focus = i; parts = [];
+    drawAll();
+    if (i != null && innerWidth <= 1080) focusEl.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
+  }
+
+  /* ---------- 타임라인 ---------- */
+  const svg = $("#spark");
+  function series() {
+    return months.map((ym) => {
+      const ld = D.months[ym].layers[st.layer];
+      return nodes.reduce((s, _, i) => s + (i === NONCAP ? 0 : io(i, ld)[0]), 0);
+    });
+  }
+  function drawSpark() {
+    const L = LAYERS[st.layer], vals = series();
+    const w = svg.clientWidth || 600, h = 100, top = 32, bot = 16, n = vals.length;
+    const mx = Math.max(...vals) * 1.05, bw = w / n, gap = Math.min(2, bw * 0.2);
+    const y = (v) => top + (h - top - bot) * (1 - v / mx);
+    let out = `<line x1="0" x2="${w}" y1="${h - bot}" y2="${h - bot}" stroke="${C.line}" stroke-width="1"/>`;
+    vals.forEach((v, i) => {
+      const x = i * bw + gap / 2, bh = Math.max(1, h - bot - y(v)), on = i === st.mi;
+      const prov = D.meta.provisional.includes(months[i]);
+      out += `<path class="bar-m" data-i="${i}" d="M${x},${h - bot} V${h - bot - bh + 4} q0,-4 4,-4 H${x + bw - gap - 4} q4,0 4,4 V${h - bot} Z" fill="${on ? L.color : mix(L.color, 0.42)}" ${prov ? 'fill-opacity="0.45"' : ""}><title>${ymLabel(months[i])} · ${metric(v, st.layer)}${prov ? " (잠정)" : ""}</title></path>`;
+      if (months[i].endsWith("-01")) out += `<text x="${x}" y="${h - 3}" fill="${C.muted}" font-size="10" font-family="${tok("--font-num")}">${months[i].slice(0, 4)}</text>`;
+    });
+    D.meta.events.forEach((e, ei) => {
+      const i = months.indexOf(e.ym); if (i < 0) return;
+      const ty = 10 + (ei % 2) * 12, label = w < 700 ? (e.short || e.label) : e.label;
+      const x = i * bw + bw / 2;
+      out += `<line x1="${x}" x2="${x}" y1="${ty + 2}" y2="${h - bot}" stroke="${C.flap}" stroke-width="1" stroke-dasharray="2 3" opacity=".6"/>`;
+      const anchor = i > n * 0.7 ? "end" : "start";
+      out += `<text x="${x + (anchor === "start" ? 4 : -4)}" y="${ty}" fill="${C.flap}" font-size="10" text-anchor="${anchor}">${label}</text>`;
+    });
+    svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svg.innerHTML = out;
+    svg.querySelectorAll(".bar-m").forEach((el) => el.addEventListener("click", () => setMonth(+el.dataset.i)));
+    $("#tl-title").innerHTML = `월별 시군구 간 <b>${L.name}</b> 규모`;
+    const prov = D.meta.provisional.includes(months[st.mi]);
+    $("#tl-month").innerHTML = `<b>${ymLabel(months[st.mi])}</b> · ${metric(vals[st.mi], st.layer)}${prov ? " · 잠정" : ""}`;
+  }
+
+  /* ---------- 범례 ---------- */
+  function drawLegend() {
+    const L = LAYERS[st.layer];
+    $("#legend").innerHTML = `
+      <div class="row"><span class="arc" style="--c:${L.color}"></span>${L.name} 흐름 · 굵기 = ${st.layer === "move" ? "인원" : "금액"}</div>
+      <div class="desc">시군구 색 = 순${st.layer === "move" ? "유입 인구" : "유입 " + (st.layer === "trade" ? "자금" : "보증금")}</div>
+      <div class="ramp"></div><div class="ends"><span>순유출</span><span>균형</span><span>순유입</span></div>`;
+  }
+
+  /* ---------- 툴팁 ---------- */
+  const tip = $("#tip");
+  function showTip(i, x, y) {
+    if (i == null) { tip.hidden = true; return; }
+    const n = nodes[i], ld = layerData(), b = cur().base[i], s = io(i, ld);
+    const net = s[0] - s[1];
+    tip.innerHTML = `<h4>${n.short}<small>${n.sido}${n.short !== n.name ? " " + n.name : ""}</small></h4><dl>
+      ${i === NONCAP ? "" : `<dt>매매</dt><dd>${nf.format(b[0])}건 · ${eok(b[1])}</dd><dt>평균 거래가</dt><dd>${b[0] ? (b[1] / b[0]).toFixed(1) + "억" : "—"}</dd>`}
+      <dt>유입</dt><dd>${metric(s[0], st.layer)}</dd><dt>유출</dt><dd>${metric(s[1], st.layer)}</dd>
+      <dt>순${net >= 0 ? "유입" : "유출"}</dt><dd style="color:${net >= 0 ? "var(--up)" : "var(--down)"}">${metric(Math.abs(net), st.layer)}</dd></dl>`;
+    tip.hidden = false;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.min(W - tw - 8, x + 14) + "px";
+    tip.style.top = Math.min(H - th - 8, Math.max(8, y + 14)) + "px";
+  }
+  function hitNode(x, y) {
+    const [bx, by] = toBase(x, y);
+    const ctx = fctx; ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    let hit = null;
+    for (let i = 0; i < NONCAP; i++) if (ctx.isPointInPath(paths[i], bx, by)) { hit = i; break; }
+    ctx.restore();
+    if (hit == null && st.noncap) {
+      const [ax, ay] = toScreen(anchors[NONCAP]);
+      if (Math.hypot(ax - x, ay - y) < 22) hit = NONCAP;
+    }
+    return hit;
+  }
+
+  /* ---------- 상호작용 ---------- */
+  let drag = null, moved = false;
+  wrap.addEventListener("pointerdown", (e) => { if (e.target.closest("button")) return; drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty }; moved = false; wrap.setPointerCapture(e.pointerId); });
+  wrap.addEventListener("pointermove", (e) => {
+    const r = wrap.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.hypot(dx, dy) > 4) moved = true;
+      if (moved) { view.tx = drag.tx + dx; view.ty = drag.ty + dy; clampView(); tip.hidden = true; drawMap(); return; }
+    }
+    if (e.pointerType === "touch") return;
+    const h = hitNode(x, y);
+    if (h !== st.hover) { st.hover = h; drawMap(); }
+    showTip(h, x, y);
+    wrap.style.cursor = h != null ? "pointer" : "grab";
+  });
+  wrap.addEventListener("pointerup", (e) => {
+    const r = wrap.getBoundingClientRect();
+    if (drag && !moved) { const h = hitNode(e.clientX - r.left, e.clientY - r.top); setFocus(h === st.focus ? null : h); }
+    drag = null;
+  });
+  wrap.addEventListener("pointerleave", () => { if (!drag) { st.hover = null; tip.hidden = true; drawMap(); } });
+  wrap.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+  }, { passive: false });
+  function zoomAt(x, y, f) {
+    const k = Math.max(1, Math.min(7, view.k * f));
+    view.tx = x - (x - view.tx) * (k / view.k); view.ty = y - (y - view.ty) * (k / view.k); view.k = k;
+    clampView(); parts = []; drawMap(); syncViewBtns();
+  }
+  function clampView() {
+    const m = 80;
+    view.tx = Math.min(m, Math.max(W - W * view.k - m, view.tx));
+    view.ty = Math.min(m, Math.max(H - H * view.k - m, view.ty));
+    if (view.k === 1) { view.tx = 0; view.ty = 0; }
+  }
+  function setView(name) {
+    if (name === "seoul") {
+      const [x0, y0] = P(126.76, 37.70), [x1, y1] = P(127.20, 37.42);
+      const k = Math.min(7, Math.min(W / (x1 - x0), H / (y1 - y0)) * 0.95);
+      view.k = k; view.tx = W / 2 - (x0 + x1) / 2 * k; view.ty = H / 2 - (y0 + y1) / 2 * k;
+    } else { view.k = 1; view.tx = 0; view.ty = 0; }
+    parts = []; drawMap(); syncViewBtns();
+  }
+  function syncViewBtns() {
+    $("#view-all").setAttribute("aria-pressed", view.k === 1);
+    $("#view-seoul").setAttribute("aria-pressed", view.k > 1);
+  }
+  $("#zin").onclick = () => zoomAt(W / 2, H / 2, 1.5);
+  $("#zout").onclick = () => zoomAt(W / 2, H / 2, 1 / 1.5);
+  $("#view-all").onclick = () => setView("all");
+  $("#view-seoul").onclick = () => setView("seoul");
+  $("#noncap").onchange = (e) => { st.noncap = e.target.checked; if (!st.noncap && st.focus === NONCAP) st.focus = null; parts = []; drawAll(); };
+  document.querySelectorAll(".tab").forEach((b) => b.onclick = () => setLayer(b.dataset.layer));
+  $(".tabs").addEventListener("keydown", (e) => {
+    const ks = Object.keys(LAYERS), i = ks.indexOf(st.layer);
+    if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const n = ks[(i + (e.key === "ArrowRight" ? 1 : ks.length - 1)) % ks.length]; setLayer(n); $("#tab-" + n).focus(); }
+  });
+  function setLayer(l) {
+    st.layer = l; parts = []; emit.clear();
+    try { localStorage.setItem("mf-layer", l); } catch (e) {}
+    drawAll();
+  }
+  const range = $("#month");
+  range.max = months.length - 1;
+  range.oninput = () => setMonth(+range.value);
+  function setMonth(i) { st.mi = Math.max(0, Math.min(months.length - 1, i)); drawAll(); }
+  let timer = null;
+  $("#play").onclick = () => {
+    st.playing = !st.playing;
+    $("#play").textContent = st.playing ? "❚❚" : "▶";
+    $("#play").setAttribute("aria-label", st.playing ? "일시정지" : "재생");
+    clearInterval(timer);
+    if (st.playing) {
+      if (st.mi === months.length - 1) setMonth(0);
+      timer = setInterval(() => {
+        if (st.mi >= months.length - 1) { $("#play").click(); return; }
+        setMonth(st.mi + 1);
+      }, 1700);
+    }
+  };
+  addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && st.focus != null) setFocus(null);
+  });
+
+  function drawAll() {
+    document.querySelectorAll(".tab").forEach((b) => b.setAttribute("aria-selected", b.dataset.layer === st.layer));
+    range.value = st.mi;
+    setClock(months[st.mi]);
+    drawMap(); drawKpis(); drawBoard(); drawFocus(); drawSpark(); drawLegend();
+  }
+
+  if (!D.meta.demo) { $("#demo").hidden = true; $("#demo-note").hidden = true; }
+  layout(); drawAll();
+  requestAnimationFrame(frame);
+  new ResizeObserver(() => { layout(); clampView(); parts = []; drawMap(); drawSpark(); }).observe(wrap);
+  if (document.fonts) document.fonts.ready.then(() => drawMap());
+})();
+</script>
