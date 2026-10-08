@@ -13,12 +13,14 @@ import csv, json, math, os, random, sys
 
 sys.path.insert(0, os.path.dirname(__file__))
 from regions import PRIORS, ANCHOR_OVERRIDE, NONCAP  # noqa: E402
+from leverage import equity  # noqa: E402
 
 random.seed(20261008)
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 OUT = os.path.join(ROOT, "data", "interim")
 
 MONTHS = [f"{y}-{m:02d}" for y in (2024, 2025, 2026) for m in range(1, 13)][:32]  # 2024-01 ~ 2026-08
+OD_LAG = 3  # 인구이동 자료 공개 시차 재현: 최근 3개월은 OD를 만들지 않는다
 
 # 거래량 지수(월). 2025년 이벤트 구간은 실제 시장 흐름의 '방향'만 반영한 시나리오.
 MKT_SEOUL = [.55, .55, .70, .75, .85, 1.05, 1.40, 1.10, .60, .70, .60, .55,
@@ -124,7 +126,13 @@ def main():
             rate = 0.00060 if is_seoul else 0.00068
             n = max(1, round(p * 1e4 * rate * mkt * policy * noise()))
             growth = (1.09 if is_seoul else 1.02) ** yrs * (1 + 0.06 * (c in TOP4) * min(yrs, 1.2))
-            trade_rows.append([ym, c, n, round(n * price * growth * noise(0.04), 2)])
+            avg = price * growth * noise(0.04)
+            # 지역 안에서도 가격이 퍼져 있다(로그정규). 대출 한도가 가격 구간별 계단이라 건별로 계산해야 한다.
+            sample = [avg * math.exp(random.gauss(-0.06, 0.35)) for _ in range(min(n, 400))]
+            scale = n * avg / sum(sample)
+            eq = sum(equity(x * scale / n * len(sample), c, ym) for x in sample) * n / len(sample)
+            corp_n = sum(random.random() < (0.025 + 0.03 * (price < 4)) for _ in range(n))
+            trade_rows.append([ym, c, n, round(n * avg, 2), corp_n, round(corp_n * avg * 0.8, 2), round(eq, 2)])
 
             rc = max(1, round(p * 1e4 * 0.0022 * season * noise()))
             new = round(rc * random.uniform(0.52, 0.6))
@@ -157,7 +165,9 @@ def main():
             s = sum(v)
             share_rows.append([ym, c, *[round(x / s, 4) for x in v]])
 
-        # 인구이동 OD
+        # 인구이동 OD (공개 시차만큼 최근 달은 비워 둔다)
+        if t >= len(MONTHS) - OD_LAG:
+            continue
         mm = season * (0.75 + 0.25 * (MKT_SEOUL[t] + MKT_GG[t]) / 2)
         for (i, j), v in base_od.items():
             f = v * k * mm
@@ -171,7 +181,7 @@ def main():
             mig_rows.append([ym, NONCAP["code"], c, round(pop[c] * 1e4 * 0.00022 * mm * noise() * (1.3 if c.startswith("11") else 1))])
             mig_rows.append([ym, c, NONCAP["code"], round(pop[c] * 1e4 * 0.0002 * mm * noise())])
 
-    write("trade_region_month.csv", ["ym", "code", "trades", "value_eok"], trade_rows)
+    write("trade_region_month.csv", ["ym", "code", "trades", "value_eok", "corp_trades", "corp_value_eok", "equity_eok"], trade_rows)
     write("rent_region_month.csv", ["ym", "code", "contracts", "new_contracts", "jeonse", "wolse", "deposit_eok"], rent_rows)
     write("buyer_origin_share.csv", ["ym", "code", "same_sgg", "same_sido", "seoul", "other"], share_rows)
     write("migration_od_month.csv", ["ym", "src", "dst", "persons"], mig_rows)
