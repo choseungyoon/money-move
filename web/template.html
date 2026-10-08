@@ -83,7 +83,12 @@ button, input { font: inherit; color: inherit; }
 .legend .ramp { width: 160px; height: 8px; border-radius: 2px; background: linear-gradient(90deg, var(--outflow), var(--land) 50%, var(--inflow)); }
 .legend .ends { display: flex; justify-content: space-between; font-size: 11px; }
 .legend .row { display: flex; align-items: center; gap: 8px; }
-.legend .arc { width: 26px; height: 3px; border-radius: 2px; background: linear-gradient(90deg, transparent, var(--c)); }
+.legend .lg-title { color: var(--fg); }
+.legend .cls-list { display: grid; gap: 2px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.legend .cls { display: flex; align-items: center; gap: 8px; font-family: var(--font-num); font-size: 11px; font-variant-numeric: tabular-nums; }
+.legend .cls-strip { display: none; align-items: center; gap: 3px; }
+.legend .cls-strip i { width: 16px; border-radius: 2px; }
+.legend .cls-strip span { margin-left: 6px; }
 .zoom { position: absolute; right: 12px; top: 12px; display: grid; gap: 4px; }
 .zoom button { width: 32px; height: 32px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r); cursor: pointer; font-family: var(--font-num); font-size: 16px; color: var(--fg); }
 .hint { position: absolute; right: 12px; bottom: 12px; font-size: 11px; color: var(--muted); pointer-events: none; text-align: right; }
@@ -167,7 +172,8 @@ button, input { font: inherit; color: inherit; }
   .views { margin-left: 0; }
   .kpi .v { font-size: 18px; }
   .legend { left: 8px; bottom: 8px; padding: 6px 8px; font-size: 11px; }
-  .legend .row, .legend .desc { display: none; }
+  .legend .cls-list, .legend .desc, .legend .lg-title { display: none; }
+  .legend .cls-strip { display: flex; }
   .legend .ramp { width: 110px; }
   .tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); width: 100%; }
   .tab { padding: 7px 4px; justify-content: center; gap: 6px; font-size: 13px; }
@@ -325,13 +331,32 @@ const D = /*__DATA__*/null;
   const pct = (a, b) => b ? (a / b - 1) * 100 : null;
   const ymLabel = (ym) => ym.replace("-", ".");
 
-  /* ---------- 레이어별 전역 최대값 (월 간 비교가 되도록 고정 스케일) ---------- */
-  const vmax = {};
+  /* ---------- 흐름 크기 5단계 ----------
+     연속 √스케일은 중앙값과 상위 10%의 굵기 차이가 1px도 안 돼 모든 선이 같아 보였다.
+     레이어별로 '전체 기간' 화면 표시 흐름의 분위수(50/75/90/97%)로 구간을 고정한다.
+     달마다 다시 나누면 거래가 급감한 달도 똑같이 굵게 그려져 감소가 안 보인다.
+     색은 같은 계열에서 밝기만 올린다: 작은 흐름은 배경으로 물러나고 큰 흐름은 뜨겁게 빛난다. */
+  const RAMP = {
+    trade: ["#86632d", "#a8742a", "#d08c22", "#f5b041", "#ffe7a3"],
+    rent: ["#2d707c", "#1f8695", "#1fb3c3", "#5fdcea", "#c4f6fb"],
+    move: ["#6450a6", "#7660c4", "#9a7cf0", "#bba3ff", "#e9e0ff"],
+  };
+  RAMP.equity = RAMP.trade;
+  const WIDTH = [1, 1.8, 3, 5, 8];          // 선 굵기(px)
+  const ALPHA = ["8c", "a6", "c8", "e6", "ff"]; // 도착 쪽 불투명도
+  const PR = [1.1, 1.5, 2, 2.7, 3.6];       // 움직이는 점 반지름
+  const RATE = [0.3, 0.6, 1.2, 2.2, 3.8];   // 초당 출발 수
+  const breaks = {};
   for (const L in LAYERS) {
-    let m = 0;
-    for (const ym of months) for (const f of D.months[ym].layers[L].flows) m = Math.max(m, f[LAYERS[L].key]);
-    vmax[L] = m;
+    const k = LAYERS[L].key, all = [];
+    for (const ym of months) all.push(...D.months[ym].layers[L].flows.map((f) => f[k]).sort((a, b) => b - a).slice(0, 80));
+    all.sort((a, b) => a - b);
+    breaks[L] = [0.5, 0.75, 0.9, 0.97].map((p) => all[Math.floor(p * (all.length - 1))] || 0);
   }
+  // 작은 지도(휴대폰)에서는 점·선 크기를 줄인다. 데스크톱 기준 크기 그대로면 지역 점이 서울을 덮는다.
+  const ds = () => Math.min(1, Math.max(0.55, W / 900));
+  const cls = (v, L = st.layer) => { const b = breaks[L]; let c = 0; while (c < 4 && v >= b[c]) c++; return c; };
+  const clsColor = (v, L = st.layer) => RAMP[L][cls(v, L)];
 
   /* ---------- 투영 ---------- */
   const BB = [126.30, 36.70, 127.90, 38.32];
@@ -445,17 +470,18 @@ const D = /*__DATA__*/null;
     const hlSet = st.hl;
     for (const f of [...flowsNow].reverse()) {
       const q = curve(f).map(toScreen);
-      const v = f[L.key] / vmax[st.layer];
-      const w = 0.6 + 6 * Math.sqrt(v);
+      const c = cls(f[L.key]), col = RAMP[st.layer][c], w = Math.max(1, WIDTH[c] * ds());
       const dim = hlSet && hlSet !== fkey(f);
       const g = ctx.createLinearGradient(q[0][0], q[0][1], q[2][0], q[2][1]);
-      g.addColorStop(0, L.color + "10");
-      g.addColorStop(1, L.color + (dim ? "30" : "c0"));
+      g.addColorStop(0, col + "18");
+      g.addColorStop(1, col + (dim ? "30" : ALPHA[c]));
       ctx.strokeStyle = g; ctx.lineWidth = hlSet === fkey(f) ? w + 2 : w; ctx.lineCap = "round";
+      if (c === 4 && !dim) { ctx.shadowBlur = 14; ctx.shadowColor = col; } // 최상위 구간만 빛 번짐
       ctx.beginPath(); ctx.moveTo(...q[0]); ctx.quadraticCurveTo(...q[1], ...q[2]); ctx.stroke();
+      ctx.shadowBlur = 0;
       if (reduce) { // 움직임을 끈 경우 도착점에 화살촉
         const p1 = qpt(q, 0.97), p2 = q[2], ang = Math.atan2(p2[1] - p1[1], p2[0] - p1[0]), s = 4 + w;
-        ctx.fillStyle = L.color; ctx.beginPath(); ctx.moveTo(...p2);
+        ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(...p2);
         ctx.lineTo(p2[0] - s * Math.cos(ang - .45), p2[1] - s * Math.sin(ang - .45));
         ctx.lineTo(p2[0] - s * Math.cos(ang + .45), p2[1] - s * Math.sin(ang + .45)); ctx.fill();
       }
@@ -471,8 +497,8 @@ const D = /*__DATA__*/null;
     nodes.forEach((n, i) => {
       if (!okNode(i)) return;
       const [x, y] = toScreen(anchors[i]);
-      const r = 1.6 + 4.5 * Math.sqrt(vol[i] / vm);
-      ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x, y, r + 1.5, 0, 7); ctx.fill();
+      const r = (1.6 + 4.5 * Math.sqrt(vol[i] / vm)) * ds();
+      ctx.fillStyle = C.ink; ctx.beginPath(); ctx.arc(x, y, r + 1.5 * ds(), 0, 7); ctx.fill();
       ctx.fillStyle = i === st.focus ? C.flap : C.fg; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
     });
     // 라벨: 활동량 순으로 배치하고 겹치면 건너뛴다
@@ -515,12 +541,12 @@ const D = /*__DATA__*/null;
       const live = new Set();
       for (const f of flowsNow) {
         const k = fkey(f); live.add(k);
-        const v = f[L.key] / vmax[st.layer];
-        const acc = (emit.get(k) || Math.random()) + dt * (0.35 + 7 * v);
+        const c = cls(f[L.key]);
+        const acc = (emit.get(k) || Math.random()) + dt * RATE[c];
         let n = Math.floor(acc); emit.set(k, acc - n);
         const q = curve(f);
         const len = Math.hypot(q[2][0] - q[0][0], q[2][1] - q[0][1]) * view.k * 1.15 + 30;
-        while (n-- > 0 && parts.length < 2600) parts.push({ f, k, t: 0, sp: (70 + 50 * Math.random()) / len, v });
+        while (n-- > 0 && parts.length < 2600) parts.push({ f, k, t: 0, sp: (70 + 50 * Math.random()) / len, c });
       }
       ctx.globalCompositeOperation = "lighter";
       const next = [];
@@ -531,15 +557,15 @@ const D = /*__DATA__*/null;
         next.push(p);
         const q = curve(p.f).map(toScreen);
         const dim = st.hl && st.hl !== p.k;
-        const r = 1.1 + 2.4 * Math.sqrt(p.v);
+        const r = PR[p.c] * ds(), col = RAMP[st.layer][p.c], head = p.c >= 3 ? "#fffaf0" : RAMP[st.layer][p.c + 1];
         for (let j = 3; j >= 0; j--) {
           const t = Math.max(0, p.t - j * 0.018);
           const [x, y] = qpt(q, t);
           ctx.globalAlpha = (dim ? 0.15 : 1) * (j ? 0.22 / j : 0.95);
-          ctx.fillStyle = j ? L.color : "#fff3d6";
+          ctx.fillStyle = j ? col : head;
           ctx.beginPath(); ctx.arc(x, y, j ? r * 1.6 : r, 0, 7); ctx.fill();
         }
-        if (j0Glow(p)) { const [x, y] = q[2]; ctx.globalAlpha = 0.25; ctx.fillStyle = L.color; ctx.beginPath(); ctx.arc(x, y, r * 3, 0, 7); ctx.fill(); }
+        if (j0Glow(p)) { const [x, y] = q[2]; ctx.globalAlpha = 0.25; ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, r * 3, 0, 7); ctx.fill(); }
       }
       parts = next;
       ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
@@ -635,7 +661,7 @@ const D = /*__DATA__*/null;
       tr.hidden = !f;
       if (!f) return;
       tr.dataset.k = fkey(f);
-      tr.style.setProperty("--c", L.color);
+      tr.style.setProperty("--c", clsColor(f[L.key]));
       const p = prev.get(fkey(f));
       let s = ["new", "◆ 신규"];
       if (p) {
@@ -680,7 +706,7 @@ const D = /*__DATA__*/null;
     const outs = all.filter((f) => f[0] === i).sort((a, c) => c[L.key] - a[L.key]).slice(0, 6);
     const mx = Math.max(1, ...ins.map((f) => f[L.key]), ...outs.map((f) => f[L.key]));
     const bars = (list, other, title) => `<div class="bars"><h4>${title}</h4>${list.length ? list.map((f) =>
-      `<div class="bar" data-node="${f[other]}" style="--c:${L.color}"><span class="lbl">${f[other] === NONCAP ? "비수도권" : nodes[f[other]].short}</span><span class="trk"><i style="width:${(f[L.key] / mx * 100).toFixed(1)}%"></i></span><span class="val">${metric(f[L.key], st.layer)}</span></div>`).join("")
+      `<div class="bar" data-node="${f[other]}" style="--c:${clsColor(f[L.key])}"><span class="lbl">${f[other] === NONCAP ? "비수도권" : nodes[f[other]].short}</span><span class="trk"><i style="width:${(f[L.key] / mx * 100).toFixed(1)}%"></i></span><span class="val">${metric(f[L.key], st.layer)}</span></div>`).join("")
       : `<div class="empty">표시할 흐름이 없습니다.</div>`}</div>`;
     const chips = i === NONCAP ? "" : `<div class="chips">
       <span class="chip">매매 <b>${nf.format(b[0])}</b>건</span>
@@ -748,10 +774,17 @@ const D = /*__DATA__*/null;
   }
 
   /* ---------- 범례 ---------- */
+  const nice = (v) => { if (v <= 0) return 0; const e = 10 ** Math.floor(Math.log10(v) - 1); return Math.round(v / e) * e; };
+  function clsLabel(c) {
+    const b = breaks[st.layer].map(nice), f = (v) => metric(v, st.layer);
+    return c === 0 ? `${f(b[0])} 미만` : c === 4 ? `${f(b[3])} 이상` : `${f(b[c - 1])} – ${f(b[c])}`;
+  }
   function drawLegend() {
     const L = LAYERS[st.layer];
     $("#legend").innerHTML = `
-      <div class="row"><span class="arc" style="--c:${L.color}"></span>${L.name} 흐름 · 굵기 = ${L.vName}</div>
+      <div class="lg-title">${L.name} · ${L.vName} 크기</div>
+      <div class="cls-list">${[4, 3, 2, 1, 0].map((c) => `<div class="cls"><svg width="34" height="10" aria-hidden="true"><line x1="3" y1="5" x2="31" y2="5" stroke="${RAMP[st.layer][c]}" stroke-width="${WIDTH[c]}" stroke-linecap="round"/></svg><span>${clsLabel(c)}</span></div>`).join("")}</div>
+      <div class="cls-strip">${[0, 1, 2, 3, 4].map((c) => `<i style="background:${RAMP[st.layer][c]};height:${Math.max(2, WIDTH[c])}px"></i>`).join("")}<span>작음 → 큼</span></div>
       <div class="desc">시군구 색 = 순유입 ${{ trade: "자금", equity: "자기자본", rent: "보증금", move: "인구" }[st.layer]}</div>
       <div class="ramp"></div><div class="ends"><span>순유출</span><span>균형</span><span>순유입</span></div>`;
   }
