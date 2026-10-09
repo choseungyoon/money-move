@@ -413,7 +413,7 @@ LTV: 규제지역 50% (10·15 이후 40%), 비규제 70%
         <li>실거래 신고기한이 계약 후 30일이라 최근 1~2개월은 과소 집계됩니다. 실데이터 모드에서는 해당 월에 '잠정' 표시가 붙습니다.</li>
         <li>'지방'은 비수도권 전체를 묶은 노드라 개별 시군보다 크게 보입니다. 필요하면 끄고 보세요.</li>
         <li>법인 매수는 실거래의 매수자 구분으로 집계해 지역 정보에 표시합니다. 흐름 배분에는 개인과 같은 방식을 씁니다. 외국인은 구분하지 않았습니다.</li>
-        <li>인구이동 통계는 실거래보다 늦게 공개됩니다. 아직 공개되지 않은 달은 직전 12개월 이주 자료로 매매·전월세 출발지를 배분하고, 안내판 아래에 그 기간을 표시합니다.</li>
+        <li>시군구 간 인구이동(어디서 어디로)은 MDIS 마이크로데이터로 연 단위, 1년 넘게 늦게 나옵니다. 그 이후 달은 KOSIS 월별 시군구 전입·전출 총계에 최근 12개월 이동 패턴을 맞춰(IPF) 추정하고 '추정'으로 표시합니다. 데모 채점에서 상위 50개 흐름 오차가 최신월 대체 19%에서 9%로 줄었지만, 실제 이동 구조가 바뀌면 오차가 커집니다.</li>
         <li id="demo-note">지금 화면은 중력모형으로 만든 시연용 데이터입니다. 정책 시점(2025.3 토허제, 10·15 대책)의 효과는 시나리오로 넣은 것이며 실제 통계가 아닙니다. 파이프라인에 API 키를 넣고 실행하면 같은 화면이 실데이터로 바뀝니다.</li>
       </ul>
     </div>
@@ -450,6 +450,9 @@ const D = /*__DATA__*/null;
   const srcMi = (mi) => (st.layer === "move" && MOVE_SRC[months[mi]] ? months.indexOf(MOVE_SRC[months[mi]]) : mi);
   const subbed = (mi = st.mi) => srcMi(mi) !== mi;               // 대체 표시 중인가
   const srcLabel = (mi = st.mi) => ymLabel(months[srcMi(mi)]);
+  // MDIS(연 단위) 이후 달은 KOSIS 월별 총계로 추정한 인구이동이다.
+  const odEst = new Set(D.meta.od_estimated || []);
+  const isEst = (mi = st.mi) => st.layer === "move" && odEst.has(months[srcMi(mi)]);
   const prevMiOf = (mi) => { const p = srcMi(mi) - 1; return p >= 0 ? p : null; };  // 비교는 원천 월의 전월과
   const SEOUL = new Set(nodes.map((n, i) => n.sido === "서울" ? i : -1).filter((i) => i >= 0));
 
@@ -764,7 +767,7 @@ const D = /*__DATA__*/null;
   }
   function drawKpis() {
     const pmi = prevMiOf(st.mi), now = kpiVals(st.mi), prev = pmi != null ? kpiVals(pmi) : null;
-    const tag = subbed() ? ` <span class="basis">${srcLabel()} 자료</span>` : "";
+    const tag = subbed() ? ` <span class="basis">${srcLabel()} 자료</span>` : isEst() ? ` <span class="basis">추정</span>` : "";
     $("#kpis").innerHTML = now.map(([k, v, fmt, isPct], i) => {
       let d = "전월 자료 없음";
       if (prev) {
@@ -785,7 +788,7 @@ const D = /*__DATA__*/null;
     const rows = flowsNow.slice(0, 10);
     $("#th-v").textContent = L.vName;
     $("#th-c").textContent = st.layer === "move" ? "" : "건";
-    $("#board-sub").textContent = `${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료)` : ""} · ${L.name}${st.focus != null ? " · " + nodes[st.focus].short : ""}`;
+    $("#board-sub").textContent = `${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료)` : isEst() ? " (추정)" : ""} · ${L.name}${st.focus != null ? " · " + nodes[st.focus].short : ""}`;
     while (board.children.length < rows.length) {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td><span class="cell-flip"></span></td><td><span class="dot"></span><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="st"><span class="cell-flip"></span></td>`;
@@ -824,10 +827,11 @@ const D = /*__DATA__*/null;
     });
     const unit = st.layer === "move" ? "인원: 명" : "금액: 억원 (1조 이상은 조)";
     const win = (D.meta.od_window || {})[months[st.mi]];
-    const odNote = st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}~${ymLabel(win[1])} 인구이동 기준` : "";
+    const winEst = win && [...odEst].some((m) => m >= win[0] && m <= win[1]);
+    const odNote = st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}~${ymLabel(win[1])} 인구이동 기준${winEst ? "(일부 추정)" : ""}` : "";
     $("#board-f").textContent = subbed()
       ? `${unit} · ${ymLabel(months[st.mi])} 통계 공개 전이라 ${srcLabel()} 자료를 표시합니다. 상태는 ${srcLabel()}의 전월 대비`
-      : `${unit} · 상태는 같은 노선의 전월 대비${odNote}`;
+      : `${unit} · 상태는 같은 노선의 전월 대비${odNote}${isEst() ? " · 추정치: KOSIS 시군구별 전입·전출 총계에 최근 12개월 MDIS 이동 패턴을 맞춘 값" : ""}`;
   }
   function setHl(k) { st.hl = k || null; [...board.children].forEach((tr) => tr.classList.toggle("hl", tr.dataset.k === k)); drawMap(); }
 
@@ -886,6 +890,11 @@ const D = /*__DATA__*/null;
   /* ---------- 인구이동 공개 전 ---------- */
   function drawNoData() {
     const el = $("#nodata"), miss = st.layer === "move" && odMissing.has(months[st.mi]);
+    if (!miss && isEst()) {
+      el.hidden = false;
+      el.innerHTML = `<b>${ymLabel(months[st.mi])} 인구 이동은 추정치입니다.</b><br>시군구별 전입·전출 총계(KOSIS 월별)에 최근 12개월 이동 패턴(MDIS 연간)을 맞췄습니다. MDIS ${months[st.mi].slice(0, 4)}년 자료가 나오면 실제 값으로 바뀝니다.`;
+      return;
+    }
     el.hidden = !miss;
     if (miss) el.innerHTML = subbed()
       ? `<b>${ymLabel(months[st.mi])} 인구이동 통계는 공개 전이라 최신 공개분(${srcLabel()}) 자료를 표시합니다.</b><br>새 달이 공개되어 데이터를 갱신하면 자동으로 바뀝니다.`
@@ -1185,7 +1194,7 @@ const D = /*__DATA__*/null;
       <span class="chip">전월세 신규 <b>${nf.format(b[3])}</b>건</span>
       <span class="chip">구 내부 ${st.layer === "move" ? "이동" : "거래"} <b>${nf.format(Math.round(ld.stats[i][4]))}</b>${st.layer === "move" ? "명" : "건"}</span></div>`;
     focusEl.innerHTML = `
-      <div class="focus-h"><h3>${n.short === n.name ? n.name : n.short}<small>${n.sido} ${n.name} · ${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료)` : ""} · ${L.name}</small></h3>
+      <div class="focus-h"><h3>${n.short === n.name ? n.name : n.short}<small>${n.sido} ${n.name} · ${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료)` : isEst() ? " (추정)" : ""} · ${L.name}</small></h3>
       <button class="btn" id="unfocus">닫기</button></div>
       ${chips}
       <div class="net">순${net >= 0 ? "유입" : "유출"} <b style="color:${net >= 0 ? "var(--up)" : "var(--down)"}">${net >= 0 ? "▲" : "▼"} ${metric(Math.abs(net), st.layer)}</b>
@@ -1226,7 +1235,8 @@ const D = /*__DATA__*/null;
         out += `<rect class="bar-m" data-i="${i}" x="${x + 0.5}" y="${top + 20}" width="${bw - gap - 1}" height="${h - bot - top - 20}" rx="3" fill="${C.ink}" stroke="${on ? C.flap : C.line}" stroke-dasharray="3 3"><title>${ymLabel(months[i])} · 공개 전 (지도는 ${ymLabel(lastOd)} 자료로 표시)</title></rect>`;
         return;
       }
-      out += `<path class="bar-m" data-i="${i}" d="M${x},${h - bot} V${h - bot - bh + 4} q0,-4 4,-4 H${x + bw - gap - 4} q4,0 4,4 V${h - bot} Z" fill="${on ? L.color : mix(L.color, 0.42)}" ${prov ? 'fill-opacity="0.45"' : ""}><title>${ymLabel(months[i])} · ${metric(v, st.layer)}${prov ? " (잠정)" : ""}</title></path>`;
+      const est = st.layer === "move" && odEst.has(months[i]);
+      out += `<path class="bar-m" data-i="${i}" d="M${x},${h - bot} V${h - bot - bh + 4} q0,-4 4,-4 H${x + bw - gap - 4} q4,0 4,4 V${h - bot} Z" fill="${on ? L.color : mix(L.color, 0.42)}" ${prov || est ? 'fill-opacity="0.45"' : ""} ${est ? `stroke="${L.color}" stroke-dasharray="2 2" stroke-width="1"` : ""}><title>${ymLabel(months[i])} · ${metric(v, st.layer)}${prov ? " (잠정)" : ""}${est ? " (추정)" : ""}</title></path>`;
       if (months[i].endsWith("-01")) out += `<text x="${x}" y="${h - 3}" fill="${C.muted}" font-size="10" font-family="${tok("--font-num")}">${months[i].slice(0, 4)}</text>`;
     });
     D.meta.events.forEach((e, ei) => {

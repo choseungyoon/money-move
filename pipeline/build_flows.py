@@ -62,7 +62,16 @@ def load_tables(interim):
     od = defaultdict(dict)
     for r in read_csv(os.path.join(interim, "migration_od_month.csv")):
         od[r["ym"]][(r["src"], r["dst"])] = int(r["persons"])
-    return dict(trade=trade, rent=rent, share=share, od=dict(od))
+    # MDIS 이후 달은 KOSIS 월별 총계로 추정한 OD(estimate_od.py)를 쓴다. MDIS 실제 값이 있는 달은 덮어쓰지 않는다.
+    estimated = set()
+    est_path = os.path.join(interim, "migration_od_est.csv")
+    if os.path.exists(est_path):
+        for r in read_csv(est_path):
+            if r["ym"] in od and r["ym"] not in estimated:
+                continue
+            estimated.add(r["ym"])
+            od[r["ym"]][(r["src"], r["dst"])] = int(r["persons"])
+    return dict(trade=trade, rent=rent, share=share, od=dict(od), od_estimated=sorted(estimated))
 
 
 def od_window(od_months, ym, size=12):
@@ -193,6 +202,7 @@ def build(tables, nodes, demo):
         "meta": {"demo": demo, "months": months, "provisional": months[-2:] if not demo else [],
                  "events": EVENTS, "od_window": windows,
                  "od_missing": [m for m in months if m not in tables["od"]],
+                 "od_estimated": [m for m in tables.get("od_estimated", []) if m in months],
                  # 인구이동이 아직 공개 전인 달 → 화면에 대신 보여줄 '그 달 이전 최신 공개월'.
                  # 데이터를 복사하지 않고 대응만 기록한다. 새 달이 공개되어 다시 빌드하면 대응이 사라진다.
                  "move_src": {m: max(x for x in od_months if x <= m) for m in months
@@ -212,8 +222,12 @@ def main(demo):
     if not demo:
         # 화면이 몇 월 자료까지 가졌는지 기록한다. check_updates.py 가 KOSIS 최신 공개 월과 비교한다(커밋 대상).
         od = [m for m in data["meta"]["months"] if m not in data["meta"]["od_missing"]]
+        est = set(data["meta"]["od_estimated"])
+        actual = [m for m in od if m not in est]
         with open(os.path.join(ROOT, "data", "coverage.json"), "w", encoding="utf-8") as f:
-            json.dump({"od_latest": max(od) if od else None, "trade_latest": data["meta"]["months"][-1],
+            json.dump({"od_latest": max(actual) if actual else None,              # MDIS 실제 OD 마지막 달
+                       "od_estimated_until": max(od) if od else None,             # 추정 포함 마지막 달
+                       "trade_latest": data["meta"]["months"][-1],
                        "built_at": __import__("time").strftime("%Y-%m-%d")}, f, ensure_ascii=False, indent=1)
     m = data["meta"]
     print(f"wrote {dst}: {os.path.getsize(dst) / 1e6:.2f} MB, {len(m['months'])} months"

@@ -26,7 +26,7 @@ class MdisTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "2025.csv"), "w", encoding="cp949", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(list(mdis.COLS.values()))
+                w.writerow(["전입연도", "전입월", "전입행정기관코드_시도", "전입행정기관코드_시군구", "전출행정기관코드_시도", "전출행정기관코드_시군구", "전입사유코드"])
                 y, m = "2025", "3"
                 w.writerow([y, m, "41", "135", "11", "680", "3"])   # 강남 → 분당, 주택
                 w.writerow([y, m, "41", "135", "11", "680", "3"])
@@ -41,13 +41,17 @@ class MdisTest(unittest.TestCase):
         self.assertEqual(rows, {("11680", "41135"): 2, ("00000", "11680"): 1, ("11500", "41190"): 1})
 
 
+# 2021~22년 설명서 기준 머리글(행정구역 = 통계청 체계일 수 있음)
+HEADER_2022 = ["전입연도", "전입월", "전입행정구역_시도코드", "전입행정구역_시군구코드", "전출행정구역_시도코드", "전출행정구역_시군구코드", "전입사유코드"]
+
+
 class MdisSchemeTest(unittest.TestCase):
     """통계청 코드(인천 23, 경기 31)와 행정안전부 코드(28, 41)를 판별해 같은 결과로 만든다."""
     def write(self, d, rows):
         with open(os.path.join(d, "x.csv"), "w", encoding="cp949", newline="") as f:
-            w = csv.writer(f); w.writerow(list(mdis.COLS.values())); w.writerows(rows)
+            w = csv.writer(f); w.writerow(HEADER_2022); w.writerows(rows)
         dst = os.path.join(d, "od.csv")
-        info = mdis.load(os.path.join(d, "*.csv"), dst)
+        info = mdis.load(os.path.join(d, "*.csv"), dst)["x.csv"]
         with open(dst, encoding="utf-8") as f:
             return info, {(r["src"], r["dst"]): int(r["persons"]) for r in csv.DictReader(f)}
 
@@ -71,6 +75,35 @@ class MdisSchemeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(ValueError):
                 self.write(d, [["2026", "5", "31", "999", "11", "230", "3"]] * 5)
+
+
+class MdisFileTest(unittest.TestCase):
+    def test_per_file_scheme_household_persons_and_encoding(self):
+        """2022(통계청 체계, CP949)와 2025(행정안전부 체계, UTF-8, 이동_총인구 포함)를 한 번에 읽는다."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "2022.csv"), "w", encoding="cp949", newline="") as f:
+                w = csv.writer(f); w.writerow(HEADER_2022)
+                w.writerow(["2022", "3", "31", "023", "11", "230", "3"])     # 통계청: 강남 → 분당
+            with open(os.path.join(d, "2025.csv"), "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["전입행정기관코드_시도", "전입행정기관코드_시군구", "전입연도", "전입월", "전출행정기관코드_시도", "전출행정기관코드_시군구", "전입사유코드", "이동_총인구"])
+                w.writerow(["41", "135", "2025", "3", "11", "680", "3", "4"])  # 행정안전부: 강남 → 분당, 4인 세대
+                w.writerow(["41", "135", "2025", "3", "11", "680", "1", "1"])  # 직업 사유
+            dst = os.path.join(d, "od.csv")
+            rep = mdis.load(os.path.join(d, "*.csv"), dst)
+            with open(dst, encoding="utf-8") as f:
+                rows = {r["ym"]: r for r in csv.DictReader(f)}
+        self.assertEqual((rep["2022.csv"]["scheme"], rep["2025.csv"]["scheme"]), ("kostat", "mois"))
+        self.assertEqual((rows["2022-03"]["src"], rows["2022-03"]["dst"]), ("11680", "41135"))
+        r = rows["2025-03"]
+        self.assertEqual([r[k] for k in ("persons", "persons_all", "households", "households_all")], ["4", "5", "1", "2"])
+
+    def test_missing_required_column_is_explained(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "x.csv"), "w", encoding="utf-8", newline="") as f:
+                csv.writer(f).writerow(["전입연도", "전입월"])
+            with self.assertRaises(ValueError):
+                mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))
 
 
 if __name__ == "__main__":

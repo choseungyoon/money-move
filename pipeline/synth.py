@@ -10,6 +10,7 @@
 수치는 공개 통계의 '규모감'에 맞춘 추정이며, 실제 통계가 아니다.
 """
 import csv, json, math, os, random, sys
+from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
 from regions import PRIORS, ANCHOR_OVERRIDE, NONCAP  # noqa: E402
@@ -20,7 +21,9 @@ ROOT = os.path.join(os.path.dirname(__file__), "..")
 OUT = os.path.join(ROOT, "data", "interim")
 
 MONTHS = [f"{y}-{m:02d}" for y in (2024, 2025, 2026) for m in range(1, 13)][:32]  # 2024-01 ~ 2026-08
-OD_LAG = 3  # 인구이동 자료 공개 시차 재현: 최근 3개월은 OD를 만들지 않는다
+# 인구이동 공개 구조 재현: MDIS(어디서 어디로)는 연 단위로 2025년까지만, KOSIS 월별 총계는 2026-08까지.
+MDIS_LAST = "2025-12"
+KOSIS_LAST = "2026-08"
 
 # 거래량 지수(월). 2025년 이벤트 구간은 실제 시장 흐름의 '방향'만 반영한 시나리오.
 MKT_SEOUL = [.55, .55, .70, .75, .85, 1.05, 1.40, 1.10, .60, .70, .60, .55,
@@ -93,7 +96,9 @@ def main():
                 corridor[(a, b)] = corridor.get((a, b), 1) * 1.7
                 corridor[(b, a)] = corridor.get((b, a), 1) * 1.25
 
-    trade_rows, rent_rows, share_rows, mig_rows = [], [], [], []
+    trade_rows, rent_rows, share_rows, mig_rows, truth_rows = [], [], [], [], []
+    HOUSING_SHARE = {c: random.uniform(0.32, 0.45) for c in codes}
+    HOUSING_SHARE[NONCAP["code"]] = 0.3
     base_od = {}
     for i in codes:
         for j in codes:
@@ -165,26 +170,48 @@ def main():
             s = sum(v)
             share_rows.append([ym, c, *[round(x / s, 4) for x in v]])
 
-        # 인구이동 OD (공개 시차만큼 최근 달은 비워 둔다)
-        if t >= len(MONTHS) - OD_LAG:
-            continue
+        # 인구이동: 모든 달의 '실제' 이동을 만들고, 공개 구조대로 MDIS(~2025-12)와 KOSIS 총계(~2026-08)로 나눈다.
+        # 2026년 실제 이동은 숨겨 두었다가 추정치 채점에 쓴다(validate_estimate.py).
         mm = season * (0.75 + 0.25 * (MKT_SEOUL[t] + MKT_GG[t]) / 2)
+        cells = []
         for (i, j), v in base_od.items():
             f = v * k * mm
             if j in BALLOON and i.startswith("11") and after(ym, "2025-11"):
                 f *= 1.2
+            if ym >= "2026-01" and i.startswith("11") and j.startswith("41"):
+                f *= 1.08  # 2026년 구조 변화: 서울→경기 이동이 기준 패턴보다 늘어난다(추정이 쉽게 못 맞히게)
             n = round(f * noise(0.12))
             if n >= 3:
-                mig_rows.append([ym, i, j, n])
+                cells.append((i, j, n))
         for c in codes:
-            mig_rows.append([ym, c, c, round(pop[c] * 1e4 * 0.0024 * mm * noise())])
-            mig_rows.append([ym, NONCAP["code"], c, round(pop[c] * 1e4 * 0.00022 * mm * noise() * (1.3 if c.startswith("11") else 1))])
-            mig_rows.append([ym, c, NONCAP["code"], round(pop[c] * 1e4 * 0.0002 * mm * noise())])
+            cells.append((c, c, round(pop[c] * 1e4 * 0.0024 * mm * noise())))
+            cells.append((NONCAP["code"], c, round(pop[c] * 1e4 * 0.00022 * mm * noise() * (1.3 if c.startswith("11") else 1))))
+            cells.append((c, NONCAP["code"], round(pop[c] * 1e4 * 0.0002 * mm * noise())))
+        for i, j, n in cells:
+            # 전체 사유 이동 = 주택 사유 / 주택 사유 비율(도착지별 32~45%, 같은 구 안 이동은 더 높다)
+            share = HOUSING_SHARE[j] * (1.25 if i == j else 1.0)
+            all_n = max(n, round(n / min(0.9, share) * noise(0.05)))
+            if ym <= MDIS_LAST:
+                mig_rows.append([ym, i, j, n, all_n, max(1, round(n / 1.9)), max(1, round(all_n / 1.7))])
+            truth_rows.append([ym, i, j, n, all_n])
 
     write("trade_region_month.csv", ["ym", "code", "trades", "value_eok", "corp_trades", "corp_value_eok", "equity_eok"], trade_rows)
     write("rent_region_month.csv", ["ym", "code", "contracts", "new_contracts", "jeonse", "wolse", "deposit_eok"], rent_rows)
     write("buyer_origin_share.csv", ["ym", "code", "same_sgg", "same_sido", "seoul", "other"], share_rows)
-    write("migration_od_month.csv", ["ym", "src", "dst", "persons"], mig_rows)
+    write("migration_od_month.csv", ["ym", "src", "dst", "persons", "persons_all", "households", "households_all"], mig_rows)
+    # KOSIS 시군구별 월 총계(총전입·총전출·시군구 내 이동)는 실제 이동에서 집계: 비수도권 노드는 KOSIS에 없음
+    mg = defaultdict(lambda: [0, 0, 0])
+    for ym, i, j, n, all_n in truth_rows:
+        if ym > KOSIS_LAST:
+            continue
+        if j != NONCAP["code"]:
+            mg[(ym, j)][0] += all_n
+        if i != NONCAP["code"]:
+            mg[(ym, i)][1] += all_n
+        if i == j:
+            mg[(ym, i)][2] += all_n
+    write("kosis_sgg_month.csv", ["ym", "code", "in_total", "out_total", "intra"], [[ym, c, *v] for (ym, c), v in sorted(mg.items())])
+    write("demo_truth_od.csv", ["ym", "src", "dst", "persons", "persons_all"], [r for r in truth_rows if r[0] > MDIS_LAST])
     print(f"demo interim: {len(MONTHS)} months, {len(trade_rows)} trade rows, {len(mig_rows)} OD rows")
     details(trade_rows, rent_rows)
 

@@ -4,7 +4,8 @@
   python pipeline/run.py real --from 2024-01 --to 2026-08
       필요: MOLIT_KEY 환경변수(공공데이터포털 인증키, 디코딩 키)
             data/raw/reb_buyer_residence.csv   (R-ONE 매입자거주지별 아파트매매거래, 시군구·월)
-            data/raw/mdis/*.csv                (MDIS 국내인구이동 마이크로데이터)
+            data/raw/mdis/*.csv                (MDIS 국내인구이동통계 > 세대관련연간자료, 연도별 CSV)
+      권장: KOSIS_KEY 환경변수            (MDIS 이후 달 인구이동 추정용 KOSIS 월별 총계)
       선택: data/raw/nts_income.csv       (국세청 TASIS 시군구별 근로소득 연말정산, 주소지)
             data/raw/card_seoul.csv        (서울 열린데이터광장 OA-23094, 거주지 기준)
             data/raw/card_gyeonggi.csv     (경기데이터드림 카드 소비 데이터)
@@ -37,7 +38,7 @@ def main():
     ap.add_argument("--refresh-all", action="store_true", help="캐시를 무시하고 요청 기간 전체를 다시 받는다")
     a = ap.parse_args()
     if a.mode == "demo":
-        py("synth.py"); py("build_flows.py"); py("build_detail.py")
+        py("synth.py"); py("estimate_od.py"); py("build_flows.py"); py("build_detail.py")
     else:
         from sources import molit, reb, mdis
         key = os.environ.get("MOLIT_KEY") or sys.exit("MOLIT_KEY 환경변수가 필요합니다.")
@@ -98,6 +99,19 @@ def main():
             card.write(rows, os.path.join(interim, "card_month.csv"))
         with open(manifest_path, "w", encoding="utf-8") as f:
             json.dump(manifest, f, ensure_ascii=False, indent=1)
+        # KOSIS 월별 시군구 총계 → MDIS 이후 달 인구이동 추정 (KOSIS_KEY 없으면 추정 없이 최신 MDIS 월로 대체 표시)
+        from sources import kosis
+        kkey = os.environ.get("KOSIS_KEY")
+        if kkey:
+            latest = kosis.latest_month(kkey)
+            rows, missing = kosis.margins(kkey, ms[0], min(latest, ms[-1]), codes)
+            with open(os.path.join(interim, "kosis_sgg_month.csv"), "w", newline="", encoding="utf-8") as f:
+                import csv as _csv
+                w = _csv.writer(f); w.writerow(kosis.MARGIN_COLS); w.writerows(rows)
+            print(f"KOSIS 월별 총계 {len(rows)}행 (최신 {latest})" + (f", 응답에 없는 시군구 {missing}" if missing else ""))
+        else:
+            print("KOSIS_KEY 가 없어 MDIS 이후 달의 인구이동은 추정하지 않습니다.")
+        py("estimate_od.py")
         py("build_flows.py", "--real")
         py("build_detail.py")
     py("build_web.py")

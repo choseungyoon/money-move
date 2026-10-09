@@ -22,18 +22,21 @@ class KosisTest(unittest.TestCase):
 
 
 class CheckTest(unittest.TestCase):
-    def test_new_month_detected(self):
-        s = check_updates.check({"od_latest": "2026-05"}, "2026-08")
-        self.assertTrue(s["od_new"]); self.assertIn("data/raw/mdis", s["message"])
+    def test_no_real_data_yet(self):
+        s = check_updates.check(None, "2026-08")
+        self.assertEqual([(a["kind"], a["key"]) for a in s["alerts"]], [("rebuild", "2026-08"), ("mdis", "2025")])
 
-    def test_up_to_date_and_unknown(self):
-        self.assertFalse(check_updates.check({"od_latest": "2026-08"}, "2026-08")["od_new"])
-        self.assertFalse(check_updates.check({"od_latest": "2026-05"}, None)["od_new"])  # 확인 실패는 알림 안 함
-        self.assertTrue(check_updates.check(None, "2026-08")["od_new"])                # 실데이터 없음
+    def test_up_to_date_after_rebuild_but_mdis_pending(self):
+        s = check_updates.check({"od_latest": "2024-12", "od_estimated_until": "2026-08"}, "2026-08")
+        self.assertEqual([(a["kind"], a["key"]) for a in s["alerts"]], [("mdis", "2025")])
 
+    def test_all_done_and_december_edge(self):
+        self.assertEqual(check_updates.check({"od_latest": "2025-12", "od_estimated_until": "2026-08"}, "2026-08")["alerts"], [])
+        s = check_updates.check({"od_latest": "2025-12", "od_estimated_until": "2026-12"}, "2026-12")
+        self.assertEqual([a["key"] for a in s["alerts"]], ["2026"])   # 12월 공개 → 그해 연간자료 알림
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_kosis_failure_makes_no_alerts(self):
+        self.assertEqual(check_updates.check(None, None)["alerts"], [])
 
 
 class NotifyTest(unittest.TestCase):
@@ -41,26 +44,47 @@ class NotifyTest(unittest.TestCase):
         import notify_issues
         self.n = notify_issues
 
-    def test_close_when_data_caught_up(self):
-        acts = self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}, {"number": 2, "title": "다른 이슈"}], "2026-08", "2026-08")
-        self.assertEqual([a[:2] for a in acts], [("close", 1)])
-        self.assertEqual(acts[0][3], "completed")
+    def status(self, cov, published="2026-08"):
+        return check_updates.check(cov, published)
 
-    def test_supersede_older_alert_and_no_duplicate(self):
-        acts = self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], "2026-05", "2026-09")
-        self.assertEqual([a[:2] for a in acts], [("create", "인구이동 2026-09 자료 공개됨"), ("close", 1)])
+    def test_legacy_alert_closed_with_explanation_and_new_alerts_created(self):
+        acts = self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], self.status(None))
+        self.assertEqual([a[:2] for a in acts], [("close", 1), ("create", "rebuild"), ("create", "mdis")])
+        self.assertEqual(acts[0][3], "not_planned")
+
+    def test_no_duplicates_and_close_when_resolved(self):
+        open_ = [{"number": 2, "title": "데이터 갱신 필요: 인구이동 2026-08 공개"}, {"number": 3, "title": "MDIS 2025년 인구이동 연간자료 반영 필요"}]
+        self.assertEqual(self.n.plan(open_, self.status(None)), [])
+        acts = self.n.plan(open_, self.status({"od_latest": "2025-12", "od_estimated_until": "2026-08"}))
+        self.assertEqual([(a[0], a[1], a[3]) for a in acts], [("close", 2, "completed"), ("close", 3, "completed")])
+
+    def test_resolved_month_closes_as_completed_even_if_newer_exists(self):
+        acts = self.n.plan([{"number": 2, "title": "데이터 갱신 필요: 인구이동 2026-08 공개"}],
+                           self.status({"od_latest": "2025-12", "od_estimated_until": "2026-08"}, "2026-09"))
+        self.assertEqual([(a[0], a[1]) for a in acts], [("create", "rebuild"), ("close", 2)])
+        self.assertEqual(acts[1][3], "completed")
+
+    def test_superseded_by_newer_month(self):
+        acts = self.n.plan([{"number": 2, "title": "데이터 갱신 필요: 인구이동 2026-08 공개"}],
+                           self.status({"od_latest": "2025-12", "od_estimated_until": "2026-07"}, "2026-09"))  # 08 미반영 상태에서 09 공개
+        self.assertEqual([(a[0], a[1]) for a in acts], [("create", "rebuild"), ("close", 2)])
         self.assertEqual(acts[1][3], "not_planned")
-        self.assertEqual(self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], None, "2026-08"), [])
 
-    def test_unknown_published_never_closes_or_creates(self):
-        self.assertEqual(self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], "2026-05", None), [])
+    def test_kosis_failure_only_closes_legacy(self):
+        open_ = [{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}, {"number": 2, "title": "데이터 갱신 필요: 인구이동 2026-08 공개"}]
+        self.assertEqual([a[1] for a in self.n.plan(open_, self.status(None, None))], [1])
 
-    def test_apply_creates_before_closing_and_links(self):
+    def test_apply_links_new_issue_in_comments(self):
         calls = []
         def call(m, p, b=None):
             calls.append((m, p, b))
-            return {"number": 7} if m == "POST" and p.endswith("/issues") else {}
-        self.n.apply(self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], None, "2026-09", "msg"), "o/r", call)
-        self.assertEqual(calls[0][:2], ("POST", "/repos/o/r/issues"))
-        self.assertIn("#7", calls[1][2]["body"])
-        self.assertEqual(calls[2], ("PATCH", "/repos/o/r/issues/1", {"state": "closed", "state_reason": "not_planned"}))
+            return {"number": 7 if "MDIS" in (b or {}).get("title", "") else 6} if m == "POST" and p.endswith("/issues") else {}
+        open_ = [{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}]
+        self.n.apply(self.n.plan(open_, self.status(None)), "o/r", call, open_)
+        self.assertEqual([c[:2] for c in calls[:2]], [("POST", "/repos/o/r/issues")] * 2)
+        self.assertIn("#7", calls[2][2]["body"])   # 옛 알림 닫는 댓글이 MDIS 알림을 가리킨다
+        self.assertEqual(calls[3], ("PATCH", "/repos/o/r/issues/1", {"state": "closed", "state_reason": "not_planned"}))
+
+
+if __name__ == "__main__":
+    unittest.main()
