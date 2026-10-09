@@ -15,8 +15,9 @@
   - 계약 해제 건(cdealType == 'O')은 제외한다. 안 빼면 취소된 신고가가 '자금 유입'으로 잡힌다.
   - 전월세 갱신 계약은 이사가 없으므로 new_contracts(contractType == '신규')를 흐름에 쓴다.
   - 부천시 2024년 구 재설치 코드(41192/41194/41196)는 41190으로 합친다.
-  - 신고기한이 계약 후 30일이라 최근 몇 달은 계속 바뀐다. refresh_recent 개월은 캐시를 무시하고 다시 받는다.
-  - 개발 계정 일일 호출 한도(API별 1만 건)를 아끼려고 응답 XML을 data/raw/molit 에 캐시한다.
+  - 응답 XML을 data/raw/molit 에 캐시하고, 계약월의 나이에 따라 다시 받는 주기를 달리한다(RefreshPolicy).
+    공공데이터포털 API는 무료지만 일일 호출 한도가 있고, 전체 재수집은 시간이 오래 걸린다.
+  - 다시 받을 때마다 이전 응답과 비교한 변경 건수를 molit_changes.csv 에 남긴다(cancel_lag.py가 분석).
   - 출력 CSV는 (ym, code) 묶음 단위로 교체한다. 다시 받은 묶음의 기존 행은 모두 지우고 새로 쓴다.
     행 단위로 덮어쓰면, 다시 받았을 때 사라진 단지(계약 해제 등)의 옛 행이 남아 순위에 계속 나온다.
   - 단지 식별: 응답에 aptSeq(단지 일련번호)가 있으면 쓰고, 없으면 시군구+법정동+지번+단지명 조합.
@@ -64,39 +65,155 @@ def parse(xml_bytes):
     return items, int(root.findtext(".//totalCount") or 0)
 
 
-class Client:
-    def __init__(self, key, cache_dir=None, fresh_months=(), getter=http_get):
-        self.key, self.cache_dir, self.fresh, self.get = key, cache_dir, set(fresh_months), getter
-        self.calls = 0
+class RefreshPolicy:
+    """계약월의 '나이'(오늘 기준 몇 개월 전 계약인가)에 따라 캐시를 얼마나 믿을지 정한다.
 
-    def _page(self, path, lawd, ymd, page):
-        cache = None
-        if self.cache_dir:
-            cache = os.path.join(self.cache_dir, path.split("/")[0], f"{lawd}_{ymd}_{page}.xml")
-            if os.path.exists(cache) and f"{ymd[:4]}-{ymd[4:]}" not in self.fresh:
-                with open(cache, "rb") as f:
-                    return f.read()
-        q = urllib.parse.urlencode({"serviceKey": self.key, "LAWD_CD": lawd, "DEAL_YMD": ymd,
-                                    "pageNo": page, "numOfRows": PAGE})
-        body = self.get(f"{BASE}/{path}?{q}")
-        self.calls += 1
-        parse(body)  # 오류 응답은 캐시하지 않는다
-        if cache:
-            os.makedirs(os.path.dirname(cache), exist_ok=True)
-            tmp = cache + ".part"  # 중단돼도 반쯤 쓴 파일이 캐시로 남지 않게
-            with open(tmp, "wb") as f:
-                f.write(body)
-            os.replace(tmp, cache)
-        return body
+    실거래 자료는 한 번 받으면 끝이 아니다. 신고기한(계약 후 30일) 동안 건이 늘고, 해제·정정이 나중에
+    반영되며, 등기일이 뒤늦게 붙는다. 해제 신고는 '해제 확정일부터 30일'이라 계약일 기준 상한이 없다.
+      뜨거운 구간 (0~hot개월)  : hot_ttl_days(1일) 지나면 다시 받는다. 같은 날 재실행은 캐시 사용.
+      따뜻한 구간 (~warm개월)  : warm_ttl_days(30일)마다.
+      차가운 구간 (그 이후)    : cold_ttl_days(180일)마다. 드문 늦은 해제·정정을 잡는다.
+    구간 경계는 추측값이다. changes.csv(변경 기록)와 cancel_lag.py(해제 시차 분석)로 측정해 조정한다.
+    """
+
+    def __init__(self, now=None, hot=3, warm=12, hot_ttl_days=1, warm_ttl_days=30, cold_ttl_days=180):
+        self.now = now or time.time()
+        self.hot, self.warm = hot, warm
+        self.ttl = (hot_ttl_days, warm_ttl_days, cold_ttl_days)
+
+    def age_months(self, ym):
+        t = time.localtime(self.now)
+        y, m = int(ym[:4]), int(ym[5:7])
+        return (t.tm_year * 12 + t.tm_mon) - (y * 12 + m)
+
+    def ttl_days(self, ym):
+        age = self.age_months(ym)
+        return self.ttl[0] if age <= self.hot else self.ttl[1] if age <= self.warm else self.ttl[2]
+
+    def is_fresh(self, ym, fetched_at):
+        return (self.now - fetched_at) < self.ttl_days(ym) * 86400
+
+
+NEVER_EXPIRE = None  # policy=None 이면 캐시를 영구히 쓴다(테스트·재현용)
+
+# 같은 거래인지 판단할 때 쓰지 않는 열: 나중에 바뀌는 값들
+VOLATILE = {"cdealType", "cdealDay", "dealAmount", "rgstDate", "deposit", "monthlyRent", "dealingGbn",
+            "estateAgentSggNm", "slerGbn", "buyerGbn", "contractType", "preDeposit", "preMonthlyRent", "useRRRight"}
+PRICE = ("dealAmount", "deposit", "monthlyRent")
+
+
+def diff_items(old, new):
+    """같은 (API, 지역, 월)의 이전 응답과 새 응답 비교 → 건수 요약."""
+    from collections import Counter
+    ident = lambda it: tuple(sorted((k, v) for k, v in it.items() if k not in VOLATILE))
+    groups_old, groups_new = defaultdict(list), defaultdict(list)
+    for it in old:
+        groups_old[ident(it)].append(it)
+    for it in new:
+        groups_new[ident(it)].append(it)
+    out = Counter()
+    for key in set(groups_old) | set(groups_new):
+        a, b = groups_old.get(key, []), groups_new.get(key, [])
+        out["removed"] += max(0, len(a) - len(b)); out["added"] += max(0, len(b) - len(a))
+        for x, y in zip(a, b):
+            if x.get("cdealType") != "O" and y.get("cdealType") == "O":
+                out["cancelled"] += 1
+            elif any(x.get(k) != y.get(k) for k in PRICE):
+                out["price_changed"] += 1
+            elif x != y:
+                out["other_changed"] += 1  # 등기일 추가 등
+    return out
+
+
+CHANGE_COLS = ["fetched_at", "api", "lawd", "ym", "age_months", "old_n", "new_n",
+               "added", "removed", "cancelled", "price_changed", "other_changed"]
+
+
+class Client:
+    """(API, 지역, 월) 묶음 단위로 캐시를 쓰거나 통째로 다시 받는다.
+
+    페이지마다 따로 판단하면 새 1페이지와 옛 2페이지가 섞여 같은 달이 서로 다른 시점의 자료가 된다.
+    다시 받을 때는 모든 페이지를 교체하고, 건수가 줄어 남는 옛 페이지 파일은 지운다.
+    """
+
+    def __init__(self, key, cache_dir=None, policy=NEVER_EXPIRE, force_months=(), getter=http_get, change_log=None):
+        self.key, self.cache_dir, self.policy, self.force, self.get = key, cache_dir, policy, set(force_months), getter
+        self.change_log = change_log
+        self.calls = self.cache_hits = 0
+
+    def _paths(self, path, lawd, ymd):
+        d = os.path.join(self.cache_dir, path.split("/")[0])
+        return d, lambda page: os.path.join(d, f"{lawd}_{ymd}_{page}.xml")
+
+    def _read_cached(self, page_path):
+        items, page = [], 1
+        while True:
+            p = page_path(page)
+            if not os.path.exists(p):
+                return None if page == 1 else items  # 1페이지가 없으면 캐시 없음
+            with open(p, "rb") as f:
+                got, total = parse(f.read())
+            items += got
+            if page * PAGE >= total:
+                return items
+            page += 1
+
+    def _use_cache(self, ym, page_path):
+        if not self.cache_dir or ym in self.force or not os.path.exists(page_path(1)):
+            return False
+        return self.policy is None or self.policy.is_fresh(ym, os.path.getmtime(page_path(1)))
+
+    def _fetch_all(self, path, lawd, ymd):
+        bodies, page = [], 1
+        while True:
+            q = urllib.parse.urlencode({"serviceKey": self.key, "LAWD_CD": lawd, "DEAL_YMD": ymd,
+                                        "pageNo": page, "numOfRows": PAGE})
+            body = self.get(f"{BASE}/{path}?{q}")
+            self.calls += 1
+            _, total = parse(body)  # 오류 응답이면 여기서 예외: 캐시를 건드리지 않는다
+            bodies.append(body)
+            if page * PAGE >= total:
+                return bodies
+            page += 1
 
     def items(self, path, lawd, ym):
-        ymd, page = ym.replace("-", ""), 1
-        while True:
-            items, total = parse(self._page(path, lawd, ymd, page))
-            yield from items
-            if page * PAGE >= total:
-                return
-            page += 1
+        ymd = ym.replace("-", "")
+        if not self.cache_dir:
+            for body in self._fetch_all(path, lawd, ymd):
+                yield from parse(body)[0]
+            return
+        d, page_path = self._paths(path, lawd, ymd)
+        if self._use_cache(ym, page_path):
+            self.cache_hits += 1
+            yield from self._read_cached(page_path)
+            return
+        old = self._read_cached(page_path)
+        bodies = self._fetch_all(path, lawd, ymd)  # 전부 받은 뒤에 교체한다(중간 실패 시 옛 캐시 유지)
+        os.makedirs(d, exist_ok=True)
+        for k, body in enumerate(bodies, 1):
+            tmp = page_path(k) + ".part"  # 중단돼도 반쯤 쓴 파일이 캐시로 남지 않게
+            with open(tmp, "wb") as f:
+                f.write(body)
+            os.replace(tmp, page_path(k))
+        k = len(bodies) + 1
+        while os.path.exists(page_path(k)):  # 건수가 줄어 남은 옛 페이지 삭제
+            os.remove(page_path(k)); k += 1
+        new = [it for body in bodies for it in parse(body)[0]]
+        if old is not None and self.change_log:
+            self._log(path, lawd, ym, old, new)
+        yield from new
+
+    def _log(self, path, lawd, ym, old, new):
+        c = diff_items(old, new)
+        age = self.policy.age_months(ym) if self.policy else ""
+        first = not os.path.exists(self.change_log)
+        os.makedirs(os.path.dirname(self.change_log) or ".", exist_ok=True)
+        with open(self.change_log, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if first:
+                w.writerow(CHANGE_COLS)
+            w.writerow([time.strftime("%Y-%m-%dT%H:%M:%S"), path.split("/")[0], lawd, ym, age, len(old), len(new),
+                        c["added"], c["removed"], c["cancelled"], c["price_changed"], c["other_changed"]])
 
 
 def num(s):

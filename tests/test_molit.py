@@ -65,13 +65,13 @@ class MolitTest(unittest.TestCase):
         self.assertEqual(rows[("2025-03", "41190")]["trades"], "4")  # 41192 2페이지(3건) + 41194(1건)
         self.assertNotIn(("2025-03", "41192"), rows)
 
-    def test_cache_reused_except_fresh_months(self):
+    def test_cache_reused_except_forced_months(self):
         with tempfile.TemporaryDirectory() as d:
             g = FakeGetter({("AptTrade", "11110", 1): xml([{"dealAmount": "10,000"}])})
             c = molit.Client("KEY", cache_dir=d, getter=g)
             list(c.items(molit.TRADE, "11110", "2025-01")); list(c.items(molit.TRADE, "11110", "2025-01"))
             self.assertEqual(len(g.urls), 1)
-            c2 = molit.Client("KEY", cache_dir=d, fresh_months={"2025-01"}, getter=g)
+            c2 = molit.Client("KEY", cache_dir=d, force_months={"2025-01"}, getter=g)
             list(c2.items(molit.TRADE, "11110", "2025-01"))
             self.assertEqual(len(g.urls), 2)
 
