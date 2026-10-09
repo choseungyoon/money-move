@@ -10,3 +10,4 @@ data/interim/
 # 빌드 산출물: CI가 생성·배포한다 (월마다 1.6MB씩 이력이 불어나는 것을 방지)
 dist/
 data/flows.json
+data/detail/

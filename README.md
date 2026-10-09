@@ -16,6 +16,19 @@ python3 -m unittest discover -s tests                         # 테스트
 | `data/raw/reb_buyer_residence.csv` | 한국부동산원 R-ONE 「매입자거주지별 아파트매매거래」 시군구·월 |
 | `data/raw/mdis/*.csv` | 통계청 MDIS 「국내인구이동통계」 마이크로데이터 (재배포 금지, 커밋 금지) |
 
+### 지역 상세 분석에 쓰는 자료 (선택)
+
+| 화면 | 파일 | 출처 | 기준 |
+|---|---|---|---|
+| 단지별 매매·전월세 순위 | (국토부 API에서 함께 집계) | 실거래 응답의 단지명·법정동·지번·면적 | 단지 식별: `aptSeq` 있으면 사용, 없으면 시군구+법정동+지번+단지명 |
+| 근로소득 | `data/raw/nts_income.csv` | 국세청 TASIS「시군구별 근로소득 연말정산 신고현황(주소지)」 | 연 단위, N년 귀속분이 N+1년 12월 공개 |
+| 카드 지출(서울) | `data/raw/card_seoul.csv` | 서울 열린데이터광장 OA-23094 (서울시·신한카드) | **거주지** 행정동, 월 |
+| 카드 지출(경기) | `data/raw/card_gyeonggi.csv` | 경기데이터드림「카드 소비 데이터」 | 시군구, 가맹점 기준으로 추정(명세 확인 필요) |
+| 카드 지출(인천) | `data/raw/card_incheon.csv` | 인천e음 군구별 결제금액 | 지역화폐만, 신용카드 전체 아님 |
+
+카드 지출은 시도마다 집계 기준이 달라 금액을 서로 비교하면 안 된다. 화면은 기준을 항상 함께 표시한다.
+열 이름은 실제 파일로 확인하지 못했다. `sources/nts_income.py`, `sources/card.py` 맨 위 `COLS`에서 맞춘다.
+
 ## 구조
 
 ```
@@ -28,11 +41,16 @@ pipeline/
   sources/mdis.py    통계청 인구이동 마이크로데이터 → 시군구 OD (주택 사유)
   synth.py           위와 '같은 스키마'의 데모 중간 테이블 생성
   build_flows.py     중간 테이블 → 흐름 추정 → data/flows.json
+  build_detail.py    단지·소득·카드 → 지역별 상세 파일 data/detail/{code}.json
   build_web.py       flows.json 인라인 → dist/index.html
   run.py             진입점 (demo | real)
 web/template.html    UI (Canvas 2D, 외부 JS 의존성 없음)
 tests/               로더·모형 불변식 테스트 (표준 unittest)
 ```
+
+지역 상세 파일(77개, 합계 약 5MB)은 지역을 누를 때만 받는다. 첫 화면 HTML에 넣으면 2MB가 7MB로 커진다.
+`dist/`는 정적 호스팅에 그대로 올리면 되지만, `file://`로 열면 브라우저가 상세 파일 요청을 막으므로
+로컬에서는 `python3 -m http.server -d dist`로 띄운다.
 
 데이터는 월 1회 갱신되므로 상시 API 서버 없이 **월 배치 → 정적 파일 → CDN** 구조로 충분하다.
 `dist/`와 `data/flows.json`은 빌드 산출물이라 커밋하지 않는다(월마다 2MB씩 이력이 불어남). CI가 만들어 artifact로 올린다.

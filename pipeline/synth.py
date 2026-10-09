@@ -186,6 +186,86 @@ def main():
     write("buyer_origin_share.csv", ["ym", "code", "same_sgg", "same_sido", "seoul", "other"], share_rows)
     write("migration_od_month.csv", ["ym", "src", "dst", "persons"], mig_rows)
     print(f"demo interim: {len(MONTHS)} months, {len(trade_rows)} trade rows, {len(mig_rows)} OD rows")
+    details(trade_rows, rent_rows)
+
+
+def details(trade_rows, rent_rows):
+    """단지별 거래·소득·카드 데모 데이터.
+
+    단지 이름은 '강남 예시07단지'처럼 가짜임이 드러나게 짓는다. 실제 단지명에 지어낸 거래를 붙이면
+    데모라고 표시해도 특정 단지의 거래 기록을 만들어낸 것이 된다.
+    단지별 건수·금액 합계는 지역 합계와 정확히 같게 배분한다(실데이터도 같은 거래를 집계하므로 같아야 한다).
+    """
+    geo = json.load(open(os.path.join(ROOT, "data", "regions_geo.json"), encoding="utf-8"))
+    short = {r["code"]: r["short"] for r in geo["regions"]}
+    cx = {}  # code → [(cid, weight, price_factor, deposit_factor, area)]
+    meta_rows = []
+    for c, (pop, price, dep) in sorted(PRIORS.items()):
+        k = max(18, min(120, int(pop * 1.6)))
+        lst = []
+        for n in range(1, k + 1):
+            year = random.randint(1986, 2024)
+            newness = (year - 1986) / 38
+            pf = math.exp(random.gauss(0, 0.28)) * (0.8 + 0.45 * newness)
+            lst.append((f"D{n:03d}", math.exp(random.gauss(0, 0.8)), pf, pf ** 0.8 * math.exp(random.gauss(0, 0.1)),
+                        random.choice([59, 74, 84, 84, 101, 114])))
+            meta_rows.append([c, f"D{n:03d}", f"{short[c]} 예시{n:02d}단지", "", year])
+        cx[c] = lst
+
+    def allocate(n, weights):
+        counts = [0] * len(weights)
+        for i in random.choices(range(len(weights)), weights=weights, k=n):
+            counts[i] += 1
+        return counts
+
+    ct, cr = [], []
+    for ym, c, n, value, *_ in trade_rows:
+        lst = cx[c]
+        counts = allocate(n, [w for _, w, *_ in lst])
+        raw = [cnt * pf for cnt, (_, _, pf, _, _) in zip(counts, lst)]
+        scale = value / (sum(raw) or 1)
+        for cnt, r, (cid, *_rest) in zip(counts, raw, lst):
+            if cnt:
+                ct.append([ym, c, cid, cnt, round(r * scale, 2), cnt * _rest[3]])
+    for ym, c, contracts, new, jeon, wolse, deposit in rent_rows:
+        lst = cx[c]
+        counts = allocate(contracts, [w for _, w, *_ in lst])
+        raw = [cnt * df for cnt, (_, _, _, df, _) in zip(counts, lst)]
+        scale = deposit / (sum(raw) or 1)
+        new_share, wolse_share = new / contracts, wolse / contracts
+        for cnt, r, (cid, *_rest) in zip(counts, raw, lst):
+            if cnt:
+                cr.append([ym, c, cid, cnt, round(cnt * new_share), round(r * scale, 2), round(cnt * wolse_share)])
+    write("complex_trade_month.csv", ["ym", "code", "cid", "trades", "value_eok", "area_m2"], ct)
+    write("complex_rent_month.csv", ["ym", "code", "cid", "contracts", "new_contracts", "deposit_eok", "wolse"], cr)
+    write("complexes.csv", ["code", "cid", "name", "umd", "build_year"], meta_rows)
+
+    # 소득: 국세청 연말정산은 'N년 귀속'이 N+1년 12월 공개 → 2026-10 기준 최신은 2024년 귀속
+    inc = []
+    for c, (pop, price, _) in PRIORS.items():
+        base = 2000 + 1150 * math.sqrt(price)
+        for y in (2021, 2022, 2023, 2024):
+            avg = base * 1.03 ** (y - 2024) * random.gauss(1, 0.02)
+            earners = pop * 1e4 * 0.47 * random.gauss(1, 0.02)
+            inc.append([y, c, round(earners), round(avg * earners / 1e4, 1), round(avg), "sgg"])
+    write("income_year.csv", ["year", "code", "earners", "total_pay_eok", "avg_pay_manwon", "level"], inc)
+
+    # 카드: 공개 시차 2개월 재현(2026-06까지). 시도마다 기준이 다르다(sources/card.py 참고).
+    card = []
+    basis = {"11": "resident", "41": "merchant", "28": "local_currency"}
+    for c, (pop, price, _) in PRIORS.items():
+        per_cap = 60 + 8 * math.sqrt(price)  # 만원/월/인. 아이·노인 포함 1인당이라 100만원 안팎
+        b = basis[c[:2]]
+        scale = 1.0 if b == "resident" else (1.15 if b == "merchant" else 0.07)  # 지역화폐는 전체 소비의 일부
+        for ym in MONTHS:
+            if ym > "2026-06":
+                continue
+            m = int(ym[5:])
+            season = 1.12 if m in (12, 1) else 0.94 if m in (2, 7) else 1.0
+            amt = pop * per_cap * scale * season * random.gauss(1, 0.03)
+            card.append([ym, c, round(amt, 1), round(amt * 1e4 / 4.5), b])
+    write("card_month.csv", ["ym", "code", "amount_eok", "count", "basis"], card)
+    print(f"demo details: {len(ct)} complex-trade rows, {len(cr)} complex-rent rows, {len(meta_rows)} complexes")
 
 
 if __name__ == "__main__":

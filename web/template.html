@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>수도권 머니 플라이트</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -129,6 +131,8 @@ button { touch-action: manipulation; }
 .board-f { font-size: 11px; color: var(--muted); }
 
 /* 지역 상세 */
+/* 지역을 고르면 상세 패널이 오른쪽 열 맨 위로 온다(안내판 아래에 두면 화면 밖으로 밀려 눌러도 변화가 안 보임) */
+.side .focus { order: -1; }
 .focus { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 14px; display: grid; gap: 12px; }
 .focus-h { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .focus-h h3 { margin: 0; font-family: var(--font-board); font-weight: 400; font-size: 26px; line-height: 1.1; }
@@ -173,6 +177,64 @@ button { touch-action: manipulation; }
 .src th { color: var(--muted); font-weight: 500; }
 .formula { font-family: var(--font-num); font-size: 12px; background: var(--ink); padding: 10px 12px; border-radius: var(--r-s); overflow-x: auto; white-space: pre; }
 
+/* 단지 TOP 10 (지역 패널) */
+.cx { display: grid; gap: 8px; border-top: 1px solid var(--line); padding-top: 12px; }
+.cx-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; }
+.cx-h h4 { margin: 0; font-size: 13px; font-weight: 600; }
+.seg.sm button { padding: 4px 9px; font-size: 12px; }
+.cx ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.cx li { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 8px; align-items: baseline; font-size: 12px; padding: 4px 0; border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent); }
+.cx li .rk { color: var(--muted); font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.cx li .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx li .num { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
+.cx li .num.sub { color: var(--muted); min-width: 64px; }
+.cx .per { color: var(--muted); font-size: 11px; }
+.facts { display: grid; gap: 4px; font-size: 12px; color: var(--muted); }
+.facts b { color: var(--fg); font-family: var(--font-num); font-weight: 500; }
+.basis { display: inline-block; padding: 0 5px; border: 1px solid var(--line); border-radius: var(--r-s); font-size: 11px; color: var(--muted); }
+.open-detail { width: 100%; padding: 9px 12px; border: 1px solid var(--flap-ink); background: none; color: var(--flap-ink); border-radius: var(--r-s); cursor: pointer; font-weight: 600; }
+.open-detail:hover { background: color-mix(in srgb, var(--flap-ink) 12%, transparent); }
+.skel { height: 12px; border-radius: var(--r-s); background: linear-gradient(90deg, var(--land), color-mix(in srgb, var(--land) 60%, var(--line)), var(--land)); background-size: 200% 100%; animation: skel 1.2s linear infinite; }
+@keyframes skel { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skel { animation: none; } }
+
+/* 지역 상세 분석 (전체 화면) */
+.sheet { position: fixed; inset: 0; z-index: 10; background: var(--ink); overflow-y: auto; overscroll-behavior: contain; padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+.sheet-in { max-width: 1200px; margin: 0 auto; padding-inline: 20px; padding-block: 20px 48px; display: grid; gap: 16px; }
+.sheet-h { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding-block: 12px; background: var(--ink); border-bottom: 1px solid var(--line); }
+.sheet-h h2 { margin: 0; font-family: var(--font-board); font-weight: 400; font-size: clamp(26px, 4vw, 34px); color: var(--flap-ink); line-height: 1.1; }
+.sheet-h p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+.sheet-ctl { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--panel); }
+.stepper button { border: 0; background: none; color: var(--fg); width: 34px; height: 32px; cursor: pointer; font-size: 16px; }
+.stepper button:disabled { color: var(--line); cursor: default; }
+.stepper output { min-width: 150px; text-align: center; font-family: var(--font-num); font-size: 13px; padding-inline: 6px; border-inline: 1px solid var(--line); line-height: 32px; }
+.sh-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.chart { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; display: grid; gap: 6px; min-width: 0; }
+.chart figcaption { font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; gap: 8px; }
+.chart figcaption b { color: var(--fg); font-weight: 500; font-family: var(--font-num); }
+.chart svg { width: 100%; height: 130px; display: block; }
+.chart .bar-p { cursor: pointer; }
+.sh-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.sh-panel-h { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; }
+.sh-panel-h h3 { margin: 0; font-size: 15px; }
+.sh-q { background: var(--ink); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r-s); padding: 6px 10px; font: inherit; min-width: 0; width: min(240px, 100%); }
+.rank { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px; }
+.rank th, .rank td { padding: 7px 8px; border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); text-align: right; white-space: nowrap; }
+.rank th:nth-child(-n+2), .rank td:nth-child(-n+2) { text-align: left; }
+.rank td { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.rank td.nm { font-family: var(--font-body); max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.rank td.nm small { color: var(--muted); margin-left: 6px; }
+.rank th { color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--panel); }
+.rank th button { all: unset; cursor: pointer; }
+.rank th button:focus-visible { outline: 2px solid var(--flap-ink); outline-offset: 2px; }
+.rank th[aria-sort] button { color: var(--fg); }
+.rank tbody tr:hover td { background: color-mix(in srgb, var(--land) 60%, transparent); }
+.sh-econ { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.sh-econ .chart svg { height: 110px; }
+.sh-econ p { margin: 0; font-size: 12px; color: var(--muted); max-width: 60ch; }
+.sh-note { margin: 0; font-size: 12px; color: var(--muted); max-width: 80ch; }
+
 @media (max-width: 1080px) {
   .stage { grid-template-columns: minmax(0, 1fr); }
   .mapwrap { height: auto; aspect-ratio: 4 / 5; max-height: 86vh; }
@@ -195,6 +257,9 @@ button { touch-action: manipulation; }
   .clock span { width: 20px; height: 30px; font-size: 17px; }
   .btable td { font-size: 14px; }
   .bar { grid-template-columns: 72px minmax(0, 1fr) 64px; }
+  .sheet-in { padding-inline: 16px; }
+  .sh-charts, .sh-econ { grid-template-columns: minmax(0, 1fr); }
+  .stepper output { min-width: 120px; }
 }
 </style>
 
@@ -282,6 +347,40 @@ button { touch-action: manipulation; }
       <input type="range" id="month" min="0" max="0" step="1" aria-label="월">
     </div>
   </section>
+
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
+    <div class="sheet-in">
+      <header class="sheet-h">
+        <div><h2 id="sheet-title"></h2><p id="sheet-sub"></p></div>
+        <button class="btn" id="sheet-close">닫기</button>
+      </header>
+      <div class="sheet-ctl">
+        <div class="seg" role="group" aria-label="거래 종류" id="sh-kind">
+          <button data-v="trade" aria-pressed="true">매매</button><button data-v="rent" aria-pressed="false">전월세</button>
+        </div>
+        <div class="seg" role="group" aria-label="집계 단위" id="sh-gran">
+          <button data-v="m" aria-pressed="true">월</button><button data-v="q" aria-pressed="false">분기</button><button data-v="y" aria-pressed="false">연</button>
+        </div>
+        <div class="stepper"><button id="sh-prev" aria-label="이전 기간">‹</button><output id="sh-period" aria-live="polite"></output><button id="sh-next" aria-label="다음 기간">›</button></div>
+      </div>
+      <section class="kpis" id="sh-kpis" aria-label="기간 핵심 지표"></section>
+      <div class="sh-charts">
+        <figure class="chart"><figcaption id="sh-c1-cap"></figcaption><svg id="sh-c1" role="img"></svg></figure>
+        <figure class="chart"><figcaption id="sh-c2-cap"></figcaption><svg id="sh-c2" role="img"></svg></figure>
+      </div>
+      <section class="sh-panel">
+        <div class="sh-panel-h"><h3 id="sh-rank-title">단지 순위</h3>
+          <label><span class="sr-only">단지명 검색</span><input class="sh-q" id="sh-q" type="search" placeholder="단지명 검색…" autocomplete="off" spellcheck="false"></label></div>
+        <div class="tablewrap"><table class="rank" id="sh-table"></table></div>
+        <button class="btn" id="sh-more" hidden>더 보기</button>
+      </section>
+      <div class="sh-econ">
+        <figure class="chart"><figcaption id="sh-inc-cap"></figcaption><svg id="sh-inc" role="img"></svg><p id="sh-inc-note"></p></figure>
+        <figure class="chart"><figcaption id="sh-card-cap"></figcaption><svg id="sh-card" role="img"></svg><p id="sh-card-note"></p></figure>
+      </div>
+      <p class="sh-note" id="sh-note"></p>
+    </div>
+  </div>
 
   <details class="method" id="method">
     <summary>이 흐름은 어떻게 추정했나<span>데이터 출처 · 모형 · 한계</span></summary>
@@ -787,6 +886,277 @@ const D = /*__DATA__*/null;
     if (miss) el.innerHTML = `<b>${ymLabel(months[st.mi])} 인구이동 통계는 아직 공개 전입니다.</b><br>가장 최근 공개분은 ${ymLabel(lastOd)}입니다.`;
   }
 
+  /* ---------- 지역 상세 자료: 누를 때 detail/{code}.json 을 받는다 ---------- */
+  const detailCache = new Map();
+  function loadDetail(i) {
+    const code = nodes[i].code;
+    if (!detailCache.has(code)) {
+      const p = fetch(`detail/${code}.json`).then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+      p.catch(() => detailCache.delete(code));  // 실패한 요청은 캐시하지 않아 다시 시도할 수 있게
+      detailCache.set(code, p);
+    }
+    return detailCache.get(code);
+  }
+  const DETAIL_ERR = "상세 자료를 불러오지 못했습니다. 네트워크를 확인하고 다시 눌러 주세요.";
+
+  // 기간 단위: m(월) q(분기) y(연). 각 기간은 월 인덱스 목록.
+  const GRAN = { m: "월", q: "분기", y: "연" };
+  const PERIODS = {};
+  for (const g of Object.keys(GRAN)) {
+    const map = new Map();
+    months.forEach((ym, k) => {
+      const y = ym.slice(0, 4), m = +ym.slice(5);
+      const key = g === "m" ? ym : g === "q" ? `${y}-${Math.ceil(m / 3)}` : y;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(k);
+    });
+    PERIODS[g] = [...map.entries()].map(([key, mis]) => ({ key, mis, label: periodLabel(g, key, mis), full: g === "m" || mis.length === (g === "q" ? 3 : 12) }));
+  }
+  function periodLabel(g, key, mis) {
+    if (g === "m") return ymLabel(key);
+    const ms = mis.map((k) => +months[k].slice(5)), part = `${Math.min(...ms)}~${Math.max(...ms)}월`;
+    if (g === "q") return `${key.slice(0, 4)}년 ${key.slice(5)}분기${mis.length < 3 ? ` (${part})` : ""}`;
+    return `${key}년${mis.length < 12 ? ` (${part})` : ""}`;
+  }
+  const periodOf = (g, mi) => PERIODS[g].findIndex((p) => p.mis.includes(mi));
+  // 비교 기간: 진행 중인 기간은 전 기간의 '같은 개월 수'와 비교한다(1~8월을 전년 12개월과 비교하면 급감처럼 보임)
+  function prevMis(g, pi) {
+    if (pi <= 0) return null;
+    const cur = PERIODS[g][pi], prev = PERIODS[g][pi - 1];
+    return cur.full ? prev.mis : prev.mis.slice(0, cur.mis.length);
+  }
+
+  // 단지별 집계. trade 행 [단지, mi, 건, 억, ㎡], rent 행 [단지, mi, 계약, 신규, 보증금합, 월세]
+  function aggregate(d, kind, mis) {
+    const set = new Set(mis), acc = new Map();
+    for (const r of d[kind]) {
+      if (!set.has(r[1])) continue;
+      let a = acc.get(r[0]); if (!a) acc.set(r[0], a = [0, 0, 0, 0]);
+      a[0] += r[2]; a[1] += r[3]; a[2] += r[4]; if (kind === "rent") a[3] += r[5];
+    }
+    return [...acc].map(([ci, a]) => {
+      const [name, umd, build] = d.complexes[ci];
+      return kind === "trade"
+        ? { ci, name, umd, build, n: a[0], value: a[1], avg: a[1] / a[0], pyeong: a[2] ? a[1] * 1e4 / (a[2] / 3.3058) : null }
+        : { ci, name, umd, build, n: a[0], nnew: a[1], dep: a[2] / a[0], wolse: a[3] / a[0] };
+    });
+  }
+  function totalsOf(d, kind, mis) {
+    const list = aggregate(d, kind, mis);
+    const n = list.reduce((s, x) => s + x.n, 0);
+    if (kind === "trade") {
+      const value = list.reduce((s, x) => s + x.value, 0);
+      const area = d.trade.filter((r) => mis.includes(r[1])).reduce((s, r) => s + r[4], 0);
+      return { n, value, avg: n ? value / n : 0, pyeong: area ? value * 1e4 / (area / 3.3058) : 0 };
+    }
+    const nnew = list.reduce((s, x) => s + x.nnew, 0), dep = list.reduce((s, x) => s + x.dep * x.n, 0), wol = list.reduce((s, x) => s + x.wolse * x.n, 0);
+    return { n, nnew, dep: n ? dep / n : 0, wolse: n ? wol / n : 0 };
+  }
+  const BASIS = {
+    resident: ["거주지 기준", "이 지역 주민이 쓴 카드 금액입니다."],
+    merchant: ["가맹점 기준", "이 지역 가게에서 결제된 금액입니다. 다른 지역 주민의 소비도 포함되어 주민 소비와 다릅니다."],
+    local_currency: ["지역화폐만", "인천e음 결제만 포함합니다. 신용카드 전체 소비가 아니라 일부입니다."],
+  };
+  const man = (v) => nf.format(Math.round(v)) + "만원";
+  const eokP = (v) => v >= 100 ? nf.format(Math.round(v)) + "억" : v.toFixed(1) + "억";
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  /* ---------- 지역 패널의 단지 TOP 10, 소득·카드 요약 ---------- */
+  const topSt = { kind: "trade", gran: "m" };
+  function renderTop(i) {
+    const box = $("#cx-top");
+    if (!box) return;
+    if (!D.meta.detail || i === NONCAP) { box.hidden = true; return; }
+    box.innerHTML = `<div class="skel" style="width:60%"></div><div class="skel"></div><div class="skel"></div><div class="skel" style="width:80%"></div>`;
+    loadDetail(i).then((d) => { if (st.focus === i) fillTop(box, d); })
+      .catch(() => { if (st.focus === i) box.innerHTML = `<p class="empty">${DETAIL_ERR}</p>`; });
+  }
+  function fillTop(box, d) {
+    const pi = periodOf(topSt.gran, st.mi), per = PERIODS[topSt.gran][pi], tr = topSt.kind === "trade";
+    const list = aggregate(d, topSt.kind, per.mis).sort((a, b) => b.n - a.n || (tr ? b.value - a.value : b.dep - a.dep)).slice(0, 10);
+    const inc = d.income, card = d.card;
+    let facts = "";
+    if (inc && inc.years.length) {
+      const k = inc.years.length - 1;
+      facts += `<div>근로소득 1인당 <b>${man(inc.avg[k])}</b> · 수도권 ${inc.of}곳 중 ${inc.rank[k]}위 (${inc.years[k]}년 귀속${inc.level === "city" ? ", 시 단위" : ""})</div>`;
+    }
+    if (card && card.mi.length) {
+      const k = card.mi.length - 1;
+      facts += `<div>카드 지출 <b>${eokP(card.amount[k])}</b> (${ymLabel(months[card.mi[k]])}) <span class="basis">${BASIS[card.basis][0]}</span></div>`;
+    }
+    const seg = (name, opts, curV) => `<div class="seg sm" role="group" aria-label="${name}">${opts.map(([v, t]) => `<button data-${name === "거래 종류" ? "kind" : "gran"}="${v}" aria-pressed="${v === curV}">${t}</button>`).join("")}</div>`;
+    box.innerHTML = `
+      <div class="cx-h"><h4>거래 많은 단지 TOP 10</h4>
+        ${seg("거래 종류", [["trade", "매매"], ["rent", "전월세"]], topSt.kind)}${seg("집계 단위", [["m", "월"], ["q", "분기"], ["y", "연"]], topSt.gran)}</div>
+      <div class="per">${per.label} · ${tr ? "건수 · 평균 거래가" : "계약 · 평균 보증금"}</div>
+      ${list.length ? `<ol>${list.map((x, k) => `<li><span class="rk">${k + 1}</span><span class="nm" title="${esc(x.name)}">${esc(x.name)}</span><span class="num">${nf.format(x.n)}건</span><span class="num sub">${tr ? x.avg.toFixed(1) + "억" : x.dep.toFixed(1) + "억"}</span></li>`).join("")}</ol>`
+        : `<p class="empty">이 기간에 신고된 거래가 없습니다.</p>`}
+      ${facts ? `<div class="facts">${facts}</div>` : ""}
+      <button class="open-detail" id="open-detail">${esc(nodes[st.focus].name)} 상세 분석 열기</button>`;
+    box.hidden = false;
+    box.querySelectorAll("[data-kind]").forEach((b) => b.onclick = () => { topSt.kind = b.dataset.kind; fillTop(box, d); });
+    box.querySelectorAll("[data-gran]").forEach((b) => b.onclick = () => { topSt.gran = b.dataset.gran; fillTop(box, d); });
+    $("#open-detail").onclick = (e) => openSheet(st.focus, e.currentTarget);
+  }
+
+  /* ---------- 지역 상세 분석 (전체 화면) ---------- */
+  const sheet = $("#sheet");
+  const sh = { i: null, d: null, kind: "trade", gran: "m", pi: 0, sort: "n", dir: -1, q: "", limit: 30, opener: null };
+  const COLS = {
+    trade: [["name", "단지"], ["build", "준공"], ["n", "거래"], ["avg", "평균 거래가"], ["pyeong", "3.3㎡당"], ["value", "거래대금"]],
+    rent: [["name", "단지"], ["build", "준공"], ["n", "계약"], ["nnew", "신규"], ["dep", "평균 보증금"], ["wolse", "월세 비중"]],
+  };
+  function openSheet(i, opener) {
+    sh.i = i; sh.opener = opener || null; sh.kind = topSt.kind; sh.gran = topSt.gran;
+    sh.pi = periodOf(sh.gran, st.mi); sh.sort = "n"; sh.dir = -1; sh.q = ""; sh.limit = 30; $("#sh-q").value = "";
+    $("#sheet-title").textContent = nodes[i].name;
+    $("#sheet-sub").textContent = `${nodes[i].sido} · 지역 상세 분석`;
+    sheet.hidden = false; document.documentElement.style.overflow = "hidden";
+    try { history.replaceState(null, "", "#r" + nodes[i].code); } catch (e) {}
+    $("#sheet-close").focus();
+    $("#sh-table").innerHTML = `<tbody><tr><td><div class="skel" style="width:300px"></div></td></tr></tbody>`;
+    loadDetail(i).then((d) => { if (sh.i === i) { sh.d = d; drawSheet(); } })
+      .catch(() => { if (sh.i === i) $("#sh-table").innerHTML = `<tbody><tr><td class="nm">${DETAIL_ERR}</td></tr></tbody>`; });
+  }
+  function closeSheet() {
+    sheet.hidden = true; document.documentElement.style.overflow = ""; sh.i = null; sh.d = null;
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}
+    if (sh.opener && document.contains(sh.opener)) sh.opener.focus(); else if ($("#open-detail")) $("#open-detail").focus();
+  }
+  function barChart(svgEl, labels, vals, sel, fmt, color, onPick) {
+    const w = svgEl.clientWidth || 500, h = svgEl.clientHeight || 130, top = 8, bot = 18, n = vals.length;
+    const mx = Math.max(...vals, 0) * 1.08 || 1, bw = w / n, gap = Math.min(3, bw * 0.25);
+    const y = (v) => top + (h - top - bot) * (1 - v / mx);
+    let out = `<line x1="0" x2="${w}" y1="${h - bot}" y2="${h - bot}" stroke="${C.line}"/>`;
+    vals.forEach((v, k) => {
+      const x = k * bw + gap / 2, bh = Math.max(v > 0 ? 2 : 0, h - bot - y(v)), on = k === sel, wd = Math.max(1, bw - gap);
+      out += `<rect class="bar-p" data-k="${k}" x="${x}" y="${h - bot - bh}" width="${wd}" height="${bh}" rx="${Math.min(3, wd / 2)}" fill="${on ? color : mix(color, 0.45)}"><title>${labels[k]} · ${fmt(v)}</title></rect>`;
+      if (on || k === 0 || k === n - 1) out += `<text x="${Math.min(w - 2, Math.max(2, x + wd / 2))}" y="${h - 4}" fill="${on ? C.fg : C.muted}" font-size="10" text-anchor="${k === 0 ? "start" : k === n - 1 ? "end" : "middle"}" font-family="${tok("--font-num")}">${labels[k]}</text>`;
+    });
+    svgEl.setAttribute("viewBox", `0 0 ${w} ${h}`);
+    svgEl.innerHTML = out;
+    if (onPick) svgEl.querySelectorAll(".bar-p").forEach((el) => el.addEventListener("click", () => onPick(+el.dataset.k)));
+  }
+  function drawSheet() {
+    const d = sh.d; if (!d) return;
+    const tr = sh.kind === "trade", P = PERIODS[sh.gran], per = P[sh.pi], color = tr ? C.trade : C.rent;
+    for (const [id, v] of [["#sh-kind", sh.kind], ["#sh-gran", sh.gran]]) $(id).querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === v));
+    $("#sh-period").textContent = per.label;
+    $("#sh-prev").disabled = sh.pi <= 0; $("#sh-next").disabled = sh.pi >= P.length - 1;
+
+    // 핵심 지표 (비교: 진행 중인 기간은 전 기간의 같은 개월 수)
+    const t = totalsOf(d, sh.kind, per.mis), pm = prevMis(sh.gran, sh.pi), p = pm ? totalsOf(d, sh.kind, pm) : null;
+    const cmpLabel = !pm ? "" : per.full ? `직전 ${GRAN[sh.gran]} 대비` : `전 기간 같은 개월 대비`;
+    const kpi = (k, v, fmt, key, isPct) => {
+      let dd = "비교할 기간 없음";
+      if (p && p[key] != null) {
+        if (isPct) { const x = (t[key] - p[key]) * 100; dd = `<span class="${x >= 0 ? "u" : "dn"}">${x >= 0 ? "▲" : "▼"} ${Math.abs(x).toFixed(1)}%p</span> ${cmpLabel}`; }
+        else { const x = pct(t[key], p[key]); dd = x == null || !isFinite(x) ? "-" : `<span class="${x >= 0 ? "u" : "dn"}">${x >= 0 ? "▲" : "▼"} ${Math.abs(x).toFixed(1)}%</span> ${cmpLabel}`; }
+      }
+      return `<div class="kpi"><span class="k">${k}</span><span class="v">${fmt(v)}</span><span class="d">${dd}</span></div>`;
+    };
+    $("#sh-kpis").innerHTML = tr
+      ? kpi("매매 거래", t.n, (v) => nf.format(v) + "건", "n") + kpi("거래대금", t.value, eok, "value") + kpi("평균 거래가", t.avg, (v) => v.toFixed(2) + "억", "avg") + kpi("3.3㎡당 가격", t.pyeong, man, "pyeong")
+      : kpi("전월세 계약", t.n, (v) => nf.format(v) + "건", "n") + kpi("신규 계약", t.nnew, (v) => nf.format(v) + "건", "nnew") + kpi("평균 보증금", t.dep, (v) => v.toFixed(2) + "억", "dep") + kpi("월세 비중", t.wolse, (v) => (v * 100).toFixed(1) + "%", "wolse", true);
+
+    // 기간별 막대 2개 (단위가 다른 두 값은 축 하나에 겹치지 않는다)
+    const all = P.map((pp) => totalsOf(d, sh.kind, pp.mis));
+    const pick = (k) => { sh.pi = k; sh.limit = 30; drawSheet(); };
+    const c1 = tr ? ["매매 거래 건수", all.map((x) => x.n), (v) => nf.format(v) + "건"] : ["전월세 계약 건수", all.map((x) => x.n), (v) => nf.format(v) + "건"];
+    const c2 = tr ? ["평균 거래가", all.map((x) => x.avg), (v) => v.toFixed(2) + "억"] : ["평균 보증금", all.map((x) => x.dep), (v) => v.toFixed(2) + "억"];
+    $("#sh-c1-cap").innerHTML = `<span>${GRAN[sh.gran]}별 ${c1[0]}</span><b>${c1[2](c1[1][sh.pi])}</b>`;
+    $("#sh-c2-cap").innerHTML = `<span>${GRAN[sh.gran]}별 ${c2[0]}</span><b>${c2[2](c2[1][sh.pi])}</b>`;
+    $("#sh-c1").setAttribute("aria-label", `${GRAN[sh.gran]}별 ${c1[0]}`); $("#sh-c2").setAttribute("aria-label", `${GRAN[sh.gran]}별 ${c2[0]}`);
+    barChart($("#sh-c1"), P.map((pp) => pp.label), c1[1], sh.pi, c1[2], color, pick);
+    barChart($("#sh-c2"), P.map((pp) => pp.label), c2[1], sh.pi, c2[2], color, pick);
+
+    drawRank();
+    drawEcon();
+    $("#sh-note").textContent = (D.meta.demo ? "데모 데이터입니다. 단지 이름은 '예시'로 표시한 가짜 단지이고 수치는 실제 거래가 아닙니다. " : "")
+      + "단지별 거래는 국토교통부 실거래가(계약 해제 건 제외)를 단지 단위로 집계했습니다. 최근 1~2개월은 신고기한 때문에 늘어날 수 있습니다.";
+  }
+  function drawRank() {
+    const d = sh.d, tr = sh.kind === "trade", per = PERIODS[sh.gran][sh.pi];
+    let list = aggregate(d, sh.kind, per.mis);
+    // 순위는 거래 건수 기준으로 매기고, 표 정렬은 사용자가 바꿀 수 있다
+    list.sort((a, b) => b.n - a.n || (tr ? b.value - a.value : b.dep - a.dep)).forEach((x, k) => x.rank = k + 1);
+    const q = sh.q.trim();
+    if (q) list = list.filter((x) => x.name.includes(q) || (x.umd || "").includes(q));
+    const key = sh.sort, dir = sh.dir;
+    list.sort((a, b) => {
+      const va = a[key], vb = b[key];
+      if (va == null) return 1; if (vb == null) return -1;
+      return typeof va === "string" ? dir * va.localeCompare(vb, "ko") : dir * (va - vb);
+    });
+    const cols = COLS[sh.kind];
+    $("#sh-rank-title").textContent = `단지 순위 · ${per.label} (${nf.format(list.length)}개 단지)`;
+    const head = `<thead><tr><th title="선택한 기간의 거래 건수 기준 순위">거래순위</th>${cols.map(([k, t]) => `<th ${k === key ? `aria-sort="${dir > 0 ? "ascending" : "descending"}"` : ""}><button data-sort="${k}">${t}${k === key ? (dir > 0 ? " ▲" : " ▼") : ""}</button></th>`).join("")}</tr></thead>`;
+    const cell = (x, k) => {
+      const v = x[k];
+      if (k === "name") return `<td class="nm" title="${esc(x.name)}">${esc(x.name)}${x.umd ? `<small>${esc(x.umd)}</small>` : ""}</td>`;
+      if (v == null) return `<td>-</td>`;
+      if (k === "build") return `<td>${v}</td>`;
+      if (k === "n" || k === "nnew") return `<td>${nf.format(v)}</td>`;
+      if (k === "pyeong") return `<td>${man(v)}</td>`;
+      if (k === "wolse") return `<td>${(v * 100).toFixed(0)}%</td>`;
+      if (k === "value") return `<td>${eokP(v)}</td>`;
+      return `<td>${v.toFixed(2)}억</td>`;
+    };
+    const rows = list.slice(0, sh.limit).map((x) => `<tr><td>${x.rank}</td>${cols.map(([k]) => cell(x, k)).join("")}</tr>`).join("");
+    $("#sh-table").innerHTML = head + `<tbody>${rows || `<tr><td></td><td class="nm">${q ? "검색 결과가 없습니다." : "이 기간에 신고된 거래가 없습니다."}</td></tr>`}</tbody>`;
+    $("#sh-table").querySelectorAll("[data-sort]").forEach((b) => b.onclick = () => {
+      const k = b.dataset.sort;
+      if (sh.sort === k) sh.dir = -sh.dir; else { sh.sort = k; sh.dir = k === "name" ? 1 : -1; }
+      drawRank();
+      $(`#sh-table [data-sort="${k}"]`).focus();
+    });
+    const more = $("#sh-more");
+    more.hidden = list.length <= sh.limit;
+    more.textContent = `더 보기 (${nf.format(list.length - sh.limit)}개 남음)`;
+  }
+  function drawEcon() {
+    const d = sh.d, inc = d.income, card = d.card;
+    if (inc && inc.years.length) {
+      const k = inc.years.length - 1;
+      $("#sh-inc-cap").innerHTML = `<span>근로소득 1인당 평균 총급여</span><b>${man(inc.avg[k])}</b>`;
+      barChart($("#sh-inc"), inc.years.map((y) => `${y}년 귀속`), inc.avg, k, man, C.flap);
+      $("#sh-inc").setAttribute("aria-label", "연도별 근로소득 1인당 평균 총급여");
+      $("#sh-inc-note").textContent = `수도권 ${inc.of}개 시군구 중 ${inc.rank[k]}위. 국세청 연말정산(주소지 기준), 근로자 ${nf.format(inc.earners[k])}명.`
+        + (inc.level === "city" ? " 구별 자료가 없어 시 전체 값입니다." : "");
+    } else {
+      $("#sh-inc-cap").innerHTML = "<span>근로소득</span>"; $("#sh-inc").innerHTML = ""; $("#sh-inc-note").textContent = "소득 자료가 없습니다.";
+    }
+    if (card && card.mi.length) {
+      const n = Math.min(18, card.mi.length), mis = card.mi.slice(-n), amt = card.amount.slice(-n), k = n - 1;
+      const lastMi = mis[k], prevIdx = card.mi.indexOf(lastMi - 12);
+      const yoy = prevIdx >= 0 ? pct(card.amount[card.mi.length - 1], card.amount[prevIdx]) : null;
+      $("#sh-card-cap").innerHTML = `<span>월별 카드 지출 <span class="basis">${BASIS[card.basis][0]}</span></span><b>${eokP(amt[k])}</b>`;
+      barChart($("#sh-card"), mis.map((m) => ymLabel(months[m])), amt, k, eokP, C.rent);
+      $("#sh-card").setAttribute("aria-label", "월별 카드 지출");
+      $("#sh-card-note").textContent = BASIS[card.basis][1] + (yoy != null ? ` ${ymLabel(months[lastMi])} 전년 같은 달 대비 ${yoy >= 0 ? "+" : ""}${yoy.toFixed(1)}%.` : "")
+        + " 집계 기준이 다른 지역과는 금액을 비교하지 마세요.";
+    } else {
+      $("#sh-card-cap").innerHTML = "<span>카드 지출</span>"; $("#sh-card").innerHTML = ""; $("#sh-card-note").textContent = "카드 지출 자료가 없습니다.";
+    }
+  }
+  $("#sheet-close").onclick = closeSheet;
+  $("#sh-prev").onclick = () => { if (sh.pi > 0) { sh.pi--; sh.limit = 30; drawSheet(); } };
+  $("#sh-next").onclick = () => { if (sh.pi < PERIODS[sh.gran].length - 1) { sh.pi++; sh.limit = 30; drawSheet(); } };
+  $("#sh-kind").querySelectorAll("button").forEach((b) => b.onclick = () => { sh.kind = b.dataset.v; sh.sort = "n"; sh.dir = -1; sh.limit = 30; drawSheet(); });
+  $("#sh-gran").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    const mi = PERIODS[sh.gran][sh.pi].mis.at(-1); sh.gran = b.dataset.v; sh.pi = periodOf(sh.gran, mi); sh.limit = 30; drawSheet();
+  });
+  $("#sh-q").addEventListener("input", (e) => { sh.q = e.target.value; sh.limit = 30; drawRank(); });
+  $("#sh-more").onclick = () => { sh.limit += 30; drawRank(); };
+  // 대화상자 안에서 Tab 순환
+  sheet.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const f = [...sheet.querySelectorAll("button:not([disabled]):not([hidden]), input, [tabindex='0']")].filter((el) => el.offsetParent !== null);
+    if (!f.length) return;
+    if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f.at(-1).focus(); }
+    else if (!e.shiftKey && document.activeElement === f.at(-1)) { e.preventDefault(); f[0].focus(); }
+  });
+
   /* ---------- 지역 상세 ---------- */
   const focusEl = $("#focus");
   function drawFocus() {
@@ -815,8 +1185,10 @@ const D = /*__DATA__*/null;
       <div class="net">순${net >= 0 ? "유입" : "유출"} <b style="color:${net >= 0 ? "var(--up)" : "var(--down)"}">${net >= 0 ? "▲" : "▼"} ${metric(Math.abs(net), st.layer)}</b>
         <span style="color:var(--muted)"> (유입 ${metric(s[0], st.layer)} · 유출 ${metric(s[1], st.layer)})</span></div>
       ${bars(ins, 0, "어디서 들어왔나")}
-      ${bars(outs, 1, "어디로 나갔나")}`;
+      ${bars(outs, 1, "어디로 나갔나")}
+      <div class="cx" id="cx-top" aria-live="polite"></div>`;
     focusEl.hidden = false;
+    renderTop(i);
     $("#unfocus").onclick = () => setFocus(null);
     focusEl.querySelectorAll(".bar").forEach((el) => el.onclick = () => setFocus(+el.dataset.node));
   }
@@ -1059,6 +1431,7 @@ const D = /*__DATA__*/null;
     }
   };
   addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !sheet.hidden) { closeSheet(); return; }
     if (e.key === "Escape" && st.focus != null) setFocus(null);
   });
 
@@ -1074,6 +1447,14 @@ const D = /*__DATA__*/null;
 
   if (!D.meta.demo) { $("#demo").hidden = true; $("#demo-note").hidden = true; }
   layout(); drawAll();
+  function openFromHash() {
+    const m = /^#r(\d{5})$/.exec(location.hash);
+    if (!m || !D.meta.detail) return;
+    const i = nodes.findIndex((n) => n.code === m[1]);
+    if (i >= 0 && i !== NONCAP && sh.i !== i) { setFocus(i); openSheet(i, null); }
+  }
+  openFromHash();
+  addEventListener("hashchange", openFromHash);
   requestAnimationFrame(frame);
   new ResizeObserver(() => { layout(); clampView(); parts = []; drawMap(); drawSpark(); }).observe(wrap);
   if (document.fonts) document.fonts.ready.then(() => drawMap());
