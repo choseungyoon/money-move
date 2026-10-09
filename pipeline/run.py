@@ -1,17 +1,21 @@
 """파이프라인 진입점.
 
   python pipeline/run.py demo                  # 데모 데이터로 dist/index.html 생성
+  python pipeline/run.py mdis                  # 내 PC에서: MDIS 원자료 → data/mdis/migration_od_month.csv.gz
+      원자료(data/raw/mdis/*.csv|*.txt)는 재배포 금지라 커밋하지 않는다. 시군구×시군구×월 집계만 커밋해
+      GitHub Actions의 real 실행이 원자료 없이 돌게 한다.
   python pipeline/run.py real --from 2024-01 --to 2026-08
       필요: MOLIT_KEY 환경변수(공공데이터포털 인증키, 디코딩 키)
             data/raw/reb_buyer_residence.csv   (R-ONE 매입자거주지별 아파트매매거래, 시군구·월)
             data/raw/mdis/*.csv                (MDIS 국내인구이동통계 > 세대관련연간자료, 연도별 CSV)
+              또는 data/mdis/migration_od_month.csv.gz  (위 원자료를 `run.py mdis`로 집계해 커밋한 파일)
       권장: KOSIS_KEY 환경변수            (MDIS 이후 달 인구이동 추정용 KOSIS 월별 총계)
       선택: data/raw/nts_income.csv       (국세청 TASIS 시군구별 근로소득 연말정산, 주소지)
             data/raw/card_seoul.csv        (서울 열린데이터광장 OA-23094, 거주지 기준)
             data/raw/card_gyeonggi.csv     (경기데이터드림 카드 소비 데이터)
             data/raw/card_incheon.csv      (인천e음 군구별 결제금액)
 """
-import argparse, glob, hashlib, json, os, subprocess, sys
+import argparse, glob, gzip, hashlib, json, os, shutil, subprocess, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
@@ -30,17 +34,46 @@ def py(script, *args):
     subprocess.run([sys.executable, os.path.join(HERE, script), *args], check=True)
 
 
+MDIS_AGG = os.path.join(ROOT, "data", "mdis", "migration_od_month.csv.gz")
+
+
+def mdis_raw_files(raw):
+    return sorted(glob.glob(os.path.join(raw, "mdis", "*.csv")) + glob.glob(os.path.join(raw, "mdis", "*.txt")))
+
+
+def mdis_aggregate(paths, interim):
+    """원자료 → interim 시군구 OD, 그리고 커밋용 gzip 사본(mtime=0이라 내용이 같으면 바이트도 같다)."""
+    from sources import mdis
+    dst = os.path.join(interim, "migration_od_month.csv")
+    rep = mdis.load(paths, dst)
+    for name, info in rep.items():
+        print(f"MDIS {name}: {info['rows']:,}행, 코드 체계 {info['scheme']}" + (f", 대응 안 된 코드 {info['unmapped']}" if info["unmapped"] else ""))
+    os.makedirs(os.path.dirname(MDIS_AGG), exist_ok=True)
+    with open(dst, "rb") as s, open(MDIS_AGG, "wb") as raw_out, gzip.GzipFile(fileobj=raw_out, mode="wb", filename="", mtime=0) as g:
+        shutil.copyfileobj(s, g)
+    with open(dst, encoding="utf-8") as f:
+        ms = sorted({line.split(",", 1)[0] for line in f if line[:1].isdigit()})
+    print(f"→ {os.path.relpath(MDIS_AGG, ROOT)} ({os.path.getsize(MDIS_AGG) / 1e3:.0f} KB, {ms[0]}~{ms[-1]}). 이 파일만 커밋하세요.")
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("mode", choices=["demo", "real"])
+    ap.add_argument("mode", choices=["demo", "real", "mdis"])
     ap.add_argument("--from", dest="start", default="2024-01")
     ap.add_argument("--to", dest="end", default="2026-08")
     ap.add_argument("--refresh-all", action="store_true", help="캐시를 무시하고 요청 기간 전체를 다시 받는다")
     a = ap.parse_args()
+    if a.mode == "mdis":
+        paths = mdis_raw_files(os.path.join(ROOT, "data", "raw"))
+        if not paths:
+            sys.exit("data/raw/mdis/ 에 MDIS 세대관련연간자료(연도별 .csv 또는 .txt)를 넣으세요.")
+        interim = os.path.join(ROOT, "data", "interim"); os.makedirs(interim, exist_ok=True)
+        mdis_aggregate(paths, interim)
+        return
     if a.mode == "demo":
         py("synth.py"); py("estimate_od.py"); py("build_flows.py"); py("build_detail.py")
     else:
-        from sources import molit, reb, mdis
+        from sources import molit, reb
         key = os.environ.get("MOLIT_KEY") or sys.exit("MOLIT_KEY 환경변수가 필요합니다.")
         interim = os.path.join(ROOT, "data", "interim"); os.makedirs(interim, exist_ok=True)
         raw = os.path.join(ROOT, "data", "raw")
@@ -70,18 +103,26 @@ def main():
             manifest[key] = h.hexdigest()
             return True
 
-        for name, loader, src, dst in (
-            ("부동산원 매입자거주지", reb.load, os.path.join(raw, "reb_buyer_residence.csv"), "buyer_origin_share.csv"),
-            ("MDIS 인구이동", lambda s, d: print("MDIS:", mdis.load(s, d)), os.path.join(raw, "mdis", "*.csv"), "migration_od_month.csv"),
-        ):
-            if glob.glob(src) and (changed(*glob.glob(src)) or not os.path.exists(os.path.join(interim, dst))):
-                loader(src, os.path.join(interim, dst))
-            elif glob.glob(src):
-                print(f"{name}: 원천 파일이 그대로라 기존 {dst}를 사용합니다.")
-            elif not os.path.exists(os.path.join(interim, dst)):
-                sys.exit(f"{name} 자료가 없습니다: {src}")
-            else:
-                print(f"{name}: 새 원천 파일이 없어 기존 {dst}를 사용합니다.")
+        src, dst = os.path.join(raw, "reb_buyer_residence.csv"), os.path.join(interim, "buyer_origin_share.csv")
+        if os.path.exists(src) and (changed(src) or not os.path.exists(dst)):
+            reb.load(src, dst)
+        elif os.path.exists(src):
+            print("부동산원 매입자거주지: 원천 파일이 그대로라 기존 buyer_origin_share.csv를 사용합니다.")
+        elif not os.path.exists(dst):
+            sys.exit(f"부동산원 매입자거주지 자료가 없습니다: {src}")
+        # MDIS: 원자료가 있으면(내 PC) 집계하고, 없으면(GitHub Actions) 커밋된 집계 파일을 쓴다
+        od = os.path.join(interim, "migration_od_month.csv")
+        mraw = mdis_raw_files(raw)
+        if mraw and (changed(*mraw) or not os.path.exists(od)):
+            mdis_aggregate(mraw, interim)
+        elif mraw:
+            print("MDIS 인구이동: 원천 파일이 그대로라 기존 migration_od_month.csv를 사용합니다.")
+        elif os.path.exists(MDIS_AGG):
+            with gzip.open(MDIS_AGG, "rb") as s, open(od, "wb") as d:
+                shutil.copyfileobj(s, d)
+            print(f"MDIS 인구이동: 커밋된 집계 {os.path.relpath(MDIS_AGG, ROOT)}를 사용합니다.")
+        elif not os.path.exists(od):
+            sys.exit("MDIS 인구이동 자료가 없습니다: data/raw/mdis/*.csv 를 넣거나 `run.py mdis` 로 만든 집계 파일을 커밋하세요.")
         # 소득·카드: 원천 파일이 있을 때만 갱신(없으면 상세 화면에서 '자료 없음'으로 표시)
         from sources import nts_income, card
         geo = os.path.join(ROOT, "data", "regions_geo.json")

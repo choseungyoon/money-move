@@ -10,6 +10,12 @@
 
 열 이름은 연도마다 다르다(2021~22 '전입행정구역_시도코드', 2023~25 '전입행정기관코드_시도').
 FIELDS의 후보 중 파일 머리글에 있는 것을 쓴다. 주택 사유 코드는 HOUSING_REASON을 코드집으로 확인.
+머리글이 없는 파일(고정길이 텍스트, 항목명 없는 CSV)은 2023~25 레이아웃(LAYOUT)으로 읽는다.
+
+추출 조건 점검
+  MDIS에서 받을 때 시도 조건(예: 전입·전출 시도 = 서울특별시,경기도)을 걸면 인천과 비수도권 이동이 빠진다.
+  그러면 시군구별 총전입·총전출이 KOSIS 총계보다 작아져 이후 달 추정(IPF)도 틀어진다.
+  그래서 한 해의 자료에 인천 행이나 비수도권 출발·도착 행이 하나도 없으면 에러를 낸다.
 
 행정구역 코드 체계 (가장 위험한 부분)
   통계청 체계와 행정안전부 체계는 시도부터 다르다: 인천 23/28, 경기 31/41.
@@ -33,13 +39,22 @@ FIELDS = {
     "persons": ["이동_총인구", "이동_총인구수", "이동인구_계"],  # 없으면 세대 1행 = 1명으로 센다
 }
 REQUIRED = ("y", "m", "to_sd", "to_sgg", "fr_sd", "fr_sgg", "reason")
-HOUSING_REASON = {"3"}  # 1직업 2가족 3주택 4교육 5주거환경 ... (연도별 코드집 확인 필요)
+HOUSING_REASON = {"3"}  # 1직업 2가족 3주택 4교육 5주거환경 6자연환경 9기타 (샘플 분포로 추정, 코드집 확인 필요)
 NONCAP = "00000"
 UNMAPPED_LIMIT = 0.01  # 수도권 행 중 대응표에 없는 비율 상한
 SAMPLE_ROWS = 20000    # 체계 판별에 쓰는 앞부분 행 수
 ALIAS = {"41192": "41190", "41194": "41190", "41196": "41190"}  # 부천 구 재설치(2024), 행정안전부 체계
 CODES = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sgg_codes.csv")
 SCHEMES = {"mois": {"11", "28", "41"}, "kostat": {"11", "23", "31"}}  # 체계별 수도권 시도 코드
+INCHEON = {"mois": "28", "kostat": "23"}
+CHECK_MIN_ROWS = 1000  # 이보다 적은 해는 추출 조건 점검을 하지 않는다(테스트·일부 파일)
+# 세대관련연간자료 2023~25 레이아웃(Format_PROC…942747.xls): 항목명, 길이. 시군구는 3자리, 읍면동은 5자리.
+LAYOUT = [("전입행정기관코드_시도", 2), ("전입행정기관코드_시군구", 3), ("전입행정기관코드_읍면동", 5),
+          ("전입연도", 4), ("전입월", 2), ("전입일", 2),
+          ("전출행정기관코드_시도", 2), ("전출행정기관코드_시군구", 3), ("전출행정기관코드_읍면동", 5),
+          ("전입사유코드", 1), ("세대주관계코드", 1), ("세대주만연령", 3), ("세대주성별코드", 1), ("세대관련코드", 1),
+          ("이동_총인구수", 2), ("이동_남자인구수", 2), ("이동_여자인구수", 2)]
+WIDTH = sum(n for _, n in LAYOUT)  # 41
 OUT_COLS = ["ym", "src", "dst", "persons", "persons_all", "households", "households_all"]
 
 
@@ -76,13 +91,43 @@ def _code5(sd, sgg):
     return sgg if len(sgg) == 5 else f"{sd.strip()}{sgg[-3:].zfill(3)}"
 
 
+def _headerless(f, path):
+    """머리글 없는 파일: 쉼표가 있으면 항목명 없는 CSV, 없으면 고정길이 텍스트로 보고 LAYOUT 순서로 읽는다."""
+    names = [n for n, _ in LAYOUT]
+    name = os.path.basename(path)
+    for n, line in enumerate(f, 1):
+        line = line.rstrip("\r\n")
+        if not line.strip():
+            continue
+        if "," in line:
+            vals = next(csv.reader([line]))
+            if len(vals) != len(names):
+                raise ValueError(f"{name}: {n}행 항목 수 {len(vals)} ≠ {len(names)}. 세대관련연간자료(2023~) 배치와 다릅니다. "
+                                 "CSV(항목명 포함)로 다시 받으세요.")
+        elif len(line) == WIDTH:
+            vals, p = [], 0
+            for _, w in LAYOUT:
+                vals.append(line[p:p + w]); p += w
+        else:
+            raise ValueError(f"{name}: {n}행 길이 {len(line)} ≠ {WIDTH}. 세대관련연간자료(2023~) 고정길이 배치와 다릅니다. "
+                             "CSV(항목명 포함)로 다시 받으세요.")
+        yield dict(zip(names, vals))
+
+
 def rows_of(path, limit=None):
     with open(path, encoding=encoding_of(path), errors="replace", newline="") as f:
-        reader = csv.DictReader(f)
-        cols = resolve(reader.fieldnames or [])
+        first = f.readline().lstrip("\ufeff").strip()
+        f.seek(0)
+        if first[:1].isdigit():
+            reader, cols = _headerless(f, path), resolve([n for n, _ in LAYOUT])
+        else:
+            reader = csv.DictReader(f)
+            cols = resolve(reader.fieldnames or [])
         for n, r in enumerate(reader):
             if limit and n >= limit:
                 return
+            if not (r[cols["y"]] or "").strip() or not (r[cols["m"]] or "").strip():
+                continue  # 빈 행(엑셀로 저장한 파일 끝 등)
             yield cols, r
 
 
@@ -102,12 +147,14 @@ def detect_scheme(path, codes):
     return max(SCHEMES, key=lambda s: hits[s])
 
 
-def load(src_glob, dst, codes_path=CODES):
-    paths = sorted(glob.glob(src_glob))
+def load(src, dst, codes_path=CODES):
+    """src: glob 문자열 또는 파일 경로 목록."""
+    paths = sorted(glob.glob(src) if isinstance(src, str) else src)
     if not paths:
-        raise FileNotFoundError(f"MDIS 파일이 없습니다: {src_glob}")
+        raise FileNotFoundError(f"MDIS 파일이 없습니다: {src}")
     codes = load_codes(codes_path)
     acc = defaultdict(lambda: [0, 0, 0, 0])  # persons_h, persons_all, households_h, households_all
+    years = defaultdict(Counter)  # 추출 조건 점검: 행 수, 인천, 비수도권에서 출발, 비수도권으로 도착
     report = {}
     for path in paths:
         scheme = detect_scheme(path, codes)
@@ -126,8 +173,16 @@ def load(src_glob, dst, codes_path=CODES):
                 return None
             return table[c]
 
+        nrows = 0
         for c, r in rows_of(path):
-            a, b = to_code(r[c["fr_sd"]], r[c["fr_sgg"]]), to_code(r[c["to_sd"]], r[c["to_sgg"]])
+            nrows += 1
+            fr_sd, to_sd = r[c["fr_sd"]].strip(), r[c["to_sd"]].strip()
+            yc = years[r[c["y"]].strip()]
+            yc["rows"] += 1
+            yc["incheon"] += INCHEON[scheme] in (fr_sd, to_sd)
+            yc["from_outside"] += fr_sd not in capital
+            yc["to_outside"] += to_sd not in capital
+            a, b = to_code(fr_sd, r[c["fr_sgg"]]), to_code(to_sd, r[c["to_sgg"]])
             if a is None or b is None or a == b == NONCAP:
                 continue
             people = int(float(r[c["persons"]] or 1)) if c["persons"] else 1
@@ -139,7 +194,14 @@ def load(src_glob, dst, codes_path=CODES):
         if cap_rows and sum(unmapped.values()) / cap_rows > UNMAPPED_LIMIT:
             raise ValueError(f"{os.path.basename(path)}: {scheme} 체계로 읽었지만 수도권 코드 {sum(unmapped.values())}/{cap_rows}건이 "
                              f"대응표에 없습니다: {unmapped.most_common(5)}. data/sgg_codes.csv 또는 ALIAS를 확인하세요.")
-        report[os.path.basename(path)] = {"scheme": scheme, "unmapped": dict(unmapped.most_common(3))}
+        report[os.path.basename(path)] = {"scheme": scheme, "rows": nrows, "unmapped": dict(unmapped.most_common(3))}
+    for y, yc in sorted(years.items()):
+        lack = [label for k, label in (("incheon", "인천"), ("from_outside", "비수도권→수도권"), ("to_outside", "수도권→비수도권"))
+                if not yc[k]]
+        if yc["rows"] >= CHECK_MIN_ROWS and lack:
+            raise ValueError(f"{y}년 MDIS 자료 {yc['rows']:,}행에 {', '.join(lack)} 이동이 하나도 없습니다. "
+                             "추출할 때 시도 조건(예: 전입·전출 시도 = 서울특별시,경기도)이 걸린 것으로 보입니다. "
+                             "조건 없이 전국으로 다시 받거나 README의 '두 묶음으로 나눠 받기'를 따르세요.")
     with open(dst, "w", newline="", encoding="utf-8") as g:
         w = csv.writer(g); w.writerow(OUT_COLS)
         for (ym, a, b), v in sorted(acc.items()):
