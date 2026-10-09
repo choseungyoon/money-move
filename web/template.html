@@ -445,6 +445,12 @@ const D = /*__DATA__*/null;
   const NONCAP = nodes.length - 1;
   const odMissing = new Set(D.meta.od_missing || []);  // 인구이동 통계 공개 전인 달
   const lastOd = months.filter((m) => !odMissing.has(m)).pop();
+  // 인구이동이 공개 전인 달은 그 이전 최신 공개월 자료로 보여준다(빌드가 만든 대응표, 복사 아님).
+  const MOVE_SRC = D.meta.move_src || {};
+  const srcMi = (mi) => (st.layer === "move" && MOVE_SRC[months[mi]] ? months.indexOf(MOVE_SRC[months[mi]]) : mi);
+  const subbed = (mi = st.mi) => srcMi(mi) !== mi;               // 대체 표시 중인가
+  const srcLabel = (mi = st.mi) => ymLabel(months[srcMi(mi)]);
+  const prevMiOf = (mi) => { const p = srcMi(mi) - 1; return p >= 0 ? p : null; };  // 비교는 원천 월의 전월과
   const SEOUL = new Set(nodes.map((n, i) => n.sido === "서울" ? i : -1).filter((i) => i >= 0));
 
   const st = { anim: !reduce, layer: "trade", tmode: "trade", mi: months.length - 1, noncap: false, focus: null, hover: null, hl: null, playing: false };
@@ -520,7 +526,7 @@ const D = /*__DATA__*/null;
 
   /* ---------- 현재 상태에서 쓰는 데이터 ---------- */
   const cur = () => D.months[months[st.mi]];
-  const layerData = (mi = st.mi) => D.months[months[mi]].layers[st.layer];
+  const layerData = (mi = st.mi) => D.months[months[srcMi(mi)]].layers[st.layer];
   const okNode = (i) => st.noncap || i !== NONCAP;
 
   function shownFlows() {
@@ -727,7 +733,7 @@ const D = /*__DATA__*/null;
 
   /* ---------- KPI ---------- */
   function kpiVals(mi) {
-    const m = D.months[months[mi]], ld = m.layers[st.layer], b = m.base, sd = ld.sido;
+    const m = D.months[months[mi]], ld = layerData(mi), b = m.base, sd = ld.sido;
     const sum = (k) => b.reduce((s, r, i) => s + (i === NONCAP ? 0 : r[k]), 0);
     const g = (k, j) => (sd[k] ? sd[k][j] : 0);
     const cross = ld.stats.reduce((s, r, i) => s + (i === NONCAP ? 0 : r[0] - (st.noncap ? 0 : r[6])), 0);
@@ -756,13 +762,9 @@ const D = /*__DATA__*/null;
       ["경기·인천 → 서울", inS(0), (v) => nf.format(v) + "명"], ["서울 순유출", outS(0) - inS(0), (v) => nf.format(v) + "명"],
     ];
   }
-  const odGap = (mi) => st.layer === "move" && odMissing.has(months[mi]);
   function drawKpis() {
-    const now = kpiVals(st.mi), prev = st.mi && !odGap(st.mi - 1) ? kpiVals(st.mi - 1) : null;
-    if (odGap(st.mi)) {
-      $("#kpis").innerHTML = now.map(([k]) => `<div class="kpi"><span class="k">${k}</span><span class="v">-</span><span class="d">통계 공개 전</span></div>`).join("");
-      return;
-    }
+    const pmi = prevMiOf(st.mi), now = kpiVals(st.mi), prev = pmi != null ? kpiVals(pmi) : null;
+    const tag = subbed() ? ` <span class="basis">${srcLabel()} 자료</span>` : "";
     $("#kpis").innerHTML = now.map(([k, v, fmt, isPct], i) => {
       let d = "전월 자료 없음";
       if (prev) {
@@ -770,7 +772,7 @@ const D = /*__DATA__*/null;
         if (isPct) { const x = v - pv; d = `<span class="${x >= 0 ? "u" : "dn"}">${x >= 0 ? "▲" : "▼"} ${Math.abs(x).toFixed(1)}%p</span> 전월 대비`; }
         else { const x = pct(v, pv); d = x == null || !isFinite(x) ? "-" : `<span class="${x >= 0 ? "u" : "dn"}">${x >= 0 ? "▲" : "▼"} ${Math.abs(x).toFixed(1)}%</span> 전월 대비`; }
       }
-      return `<div class="kpi"><span class="k">${k}</span><span class="v">${fmt(v)}</span><span class="d">${d}</span></div>`;
+      return `<div class="kpi"><span class="k">${k}${tag}</span><span class="v">${fmt(v)}</span><span class="d">${d}</span></div>`;
     }).join("");
   }
 
@@ -778,11 +780,12 @@ const D = /*__DATA__*/null;
   const board = $("#board");
   function drawBoard() {
     const L = LAYERS[st.layer];
-    const prev = st.mi ? new Map(layerData(st.mi - 1).flows.map((f) => [fkey(f), f])) : new Map();
+    const pmi = prevMiOf(st.mi);
+    const prev = pmi != null ? new Map(layerData(pmi).flows.map((f) => [fkey(f), f])) : new Map();
     const rows = flowsNow.slice(0, 10);
     $("#th-v").textContent = L.vName;
     $("#th-c").textContent = st.layer === "move" ? "" : "건";
-    $("#board-sub").textContent = `${ymLabel(months[st.mi])} · ${L.name}${st.focus != null ? " · " + nodes[st.focus].short : ""}`;
+    $("#board-sub").textContent = `${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료)` : ""} · ${L.name}${st.focus != null ? " · " + nodes[st.focus].short : ""}`;
     while (board.children.length < rows.length) {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td><span class="cell-flip"></span></td><td><span class="dot"></span><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="st"><span class="cell-flip"></span></td>`;
@@ -822,7 +825,8 @@ const D = /*__DATA__*/null;
     const unit = st.layer === "move" ? "인원: 명" : "금액: 억원 (1조 이상은 조)";
     const win = (D.meta.od_window || {})[months[st.mi]];
     const odNote = st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}~${ymLabel(win[1])} 인구이동 기준` : "";
-    $("#board-f").textContent = odGap(st.mi) ? `${ymLabel(months[st.mi])} 인구이동 통계가 공개되면 여기에 노선이 표시됩니다.`
+    $("#board-f").textContent = subbed()
+      ? `${unit} · ${ymLabel(months[st.mi])} 통계 공개 전이라 ${srcLabel()} 자료를 표시합니다. 상태는 ${srcLabel()}의 전월 대비`
       : `${unit} · 상태는 같은 노선의 전월 대비${odNote}`;
   }
   function setHl(k) { st.hl = k || null; [...board.children].forEach((tr) => tr.classList.toggle("hl", tr.dataset.k === k)); drawMap(); }
@@ -831,11 +835,11 @@ const D = /*__DATA__*/null;
   const arrivals = $("#arrivals");
   function drawArrivals() {
     const L = LAYERS[st.layer], ld = layerData();
-    const prevLd = st.mi ? layerData(st.mi - 1) : null;
-    const rows = odGap(st.mi) ? [] : [...Array(NONCAP).keys()].map((i) => [i, netOf(i, ld)]).filter(([, v]) => v > 0)
+    const pmi = prevMiOf(st.mi), prevLd = pmi != null ? layerData(pmi) : null;
+    const rows = [...Array(NONCAP).keys()].map((i) => [i, netOf(i, ld)]).filter(([, v]) => v > 0)
       .sort((a, b) => b[1] - a[1]).slice(0, 6);
     $("#arr-th").textContent = st.layer === "move" ? "순유입(명)" : "순유입";
-    $("#arr-sub").textContent = `${ymLabel(months[st.mi])} 순유입 상위`;
+    $("#arr-sub").textContent = `${subbed() ? srcLabel() + " 자료" : ymLabel(months[st.mi])} 순유입 상위`;
     while (arrivals.children.length < 6) {
       const tr = document.createElement("tr");
       tr.innerHTML = `<td><span class="cell-flip"></span></td><td class="n"><span class="cell-flip"></span></td><td class="st"><span class="cell-flip"></span></td>`;
@@ -876,14 +880,16 @@ const D = /*__DATA__*/null;
   function describeMap() {
     const L = LAYERS[st.layer], f = flowsNow[0];
     const top = f ? `가장 큰 노선은 ${nodes[f[0]].name}에서 ${nodes[f[1]].name}, ${metric(f[L.key], st.layer)}입니다.` : "표시할 흐름이 없습니다.";
-    map.setAttribute("aria-label", `${ymLabel(months[st.mi])} ${L.name} 흐름 지도. ${top} 상위 노선 목록은 출발 안내판에 있습니다.`);
+    map.setAttribute("aria-label", `${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료로 대체)` : ""} ${L.name} 흐름 지도. ${top} 상위 노선 목록은 출발 안내판에 있습니다.`);
   }
 
   /* ---------- 인구이동 공개 전 ---------- */
   function drawNoData() {
     const el = $("#nodata"), miss = st.layer === "move" && odMissing.has(months[st.mi]);
     el.hidden = !miss;
-    if (miss) el.innerHTML = `<b>${ymLabel(months[st.mi])} 인구이동 통계는 아직 공개 전입니다.</b><br>가장 최근 공개분은 ${ymLabel(lastOd)}입니다.`;
+    if (miss) el.innerHTML = subbed()
+      ? `<b>${ymLabel(months[st.mi])} 인구이동 통계는 공개 전이라 최신 공개분(${srcLabel()}) 자료를 표시합니다.</b><br>새 달이 공개되어 데이터를 갱신하면 자동으로 바뀝니다.`
+      : `<b>${ymLabel(months[st.mi])} 인구이동 통계는 아직 공개 전입니다.</b>`;
   }
 
   /* ---------- 지역 상세 자료: 누를 때 detail/{code}.json 을 받는다 ---------- */
@@ -1179,7 +1185,7 @@ const D = /*__DATA__*/null;
       <span class="chip">전월세 신규 <b>${nf.format(b[3])}</b>건</span>
       <span class="chip">구 내부 ${st.layer === "move" ? "이동" : "거래"} <b>${nf.format(Math.round(ld.stats[i][4]))}</b>${st.layer === "move" ? "명" : "건"}</span></div>`;
     focusEl.innerHTML = `
-      <div class="focus-h"><h3>${n.short === n.name ? n.name : n.short}<small>${n.sido} ${n.name} · ${ymLabel(months[st.mi])} · ${L.name}</small></h3>
+      <div class="focus-h"><h3>${n.short === n.name ? n.name : n.short}<small>${n.sido} ${n.name} · ${ymLabel(months[st.mi])}${subbed() ? ` (${srcLabel()} 자료)` : ""} · ${L.name}</small></h3>
       <button class="btn" id="unfocus">닫기</button></div>
       ${chips}
       <div class="net">순${net >= 0 ? "유입" : "유출"} <b style="color:${net >= 0 ? "var(--up)" : "var(--down)"}">${net >= 0 ? "▲" : "▼"} ${metric(Math.abs(net), st.layer)}</b>
@@ -1217,7 +1223,7 @@ const D = /*__DATA__*/null;
       const x = i * bw + gap / 2, bh = Math.max(1, h - bot - y(v)), on = i === st.mi;
       const prov = D.meta.provisional.includes(months[i]);
       if (st.layer === "move" && odMissing.has(months[i])) {
-        out += `<rect class="bar-m" data-i="${i}" x="${x + 0.5}" y="${top + 20}" width="${bw - gap - 1}" height="${h - bot - top - 20}" rx="3" fill="${C.ink}" stroke="${on ? C.flap : C.line}" stroke-dasharray="3 3"><title>${ymLabel(months[i])} · 공개 전</title></rect>`;
+        out += `<rect class="bar-m" data-i="${i}" x="${x + 0.5}" y="${top + 20}" width="${bw - gap - 1}" height="${h - bot - top - 20}" rx="3" fill="${C.ink}" stroke="${on ? C.flap : C.line}" stroke-dasharray="3 3"><title>${ymLabel(months[i])} · 공개 전 (지도는 ${ymLabel(lastOd)} 자료로 표시)</title></rect>`;
         return;
       }
       out += `<path class="bar-m" data-i="${i}" d="M${x},${h - bot} V${h - bot - bh + 4} q0,-4 4,-4 H${x + bw - gap - 4} q4,0 4,4 V${h - bot} Z" fill="${on ? L.color : mix(L.color, 0.42)}" ${prov ? 'fill-opacity="0.45"' : ""}><title>${ymLabel(months[i])} · ${metric(v, st.layer)}${prov ? " (잠정)" : ""}</title></path>`;

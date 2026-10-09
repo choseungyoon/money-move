@@ -85,6 +85,7 @@ class OdLagTest(unittest.TestCase):
         mar = {(f[0], f[1]): f[2] for f in data["months"]["2025-03"]["layers"]["trade"]["flows"]}
         self.assertEqual(jan, mar)  # 같은 거래량·비중이면 같은 배분이어야 한다
         self.assertEqual(data["months"]["2025-03"]["layers"]["move"]["flows"], [])
+        self.assertEqual(data["meta"]["move_src"], {"2025-03": "2025-01"})  # 화면은 최신 공개월로 대체 표시
 
     def test_empty_od_fails_loudly(self):
         with self.assertRaises(ValueError):

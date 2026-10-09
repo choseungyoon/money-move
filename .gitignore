@@ -11,3 +11,4 @@ data/interim/
 dist/
 data/flows.json
 data/detail/
+data/update_status.json

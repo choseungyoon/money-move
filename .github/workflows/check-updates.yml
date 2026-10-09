@@ -1,0 +1,38 @@
+name: check-updates
+
+# 매일 KST 09:13 (UTC 00:13)에 새로 공개된 인구이동 자료가 있는지 확인한다.
+# 새 달이 나왔으면 이슈로 알린다. MDIS 마이크로데이터는 로그인·이용 신청이 필요해 자동으로 받을 수 없다.
+on:
+  schedule:
+    - cron: "13 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 공개 자료 확인
+        id: check
+        env:
+          KOSIS_KEY: ${{ secrets.KOSIS_KEY }}
+        run: python pipeline/check_updates.py
+      - name: 새 자료 알림 (같은 제목의 열린 이슈가 있으면 만들지 않음)
+        if: steps.check.outputs.od_new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: "인구이동 ${{ steps.check.outputs.od_published }} 자료 공개됨"
+          BODY: ${{ steps.check.outputs.message }}
+        run: |
+          if gh issue list --state open --search "in:title \"$TITLE\"" --json title --jq '.[].title' | grep -Fxq "$TITLE"; then
+            echo "이미 열린 알림이 있습니다: $TITLE"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi

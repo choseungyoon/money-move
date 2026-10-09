@@ -193,6 +193,10 @@ def build(tables, nodes, demo):
         "meta": {"demo": demo, "months": months, "provisional": months[-2:] if not demo else [],
                  "events": EVENTS, "od_window": windows,
                  "od_missing": [m for m in months if m not in tables["od"]],
+                 # 인구이동이 아직 공개 전인 달 → 화면에 대신 보여줄 '그 달 이전 최신 공개월'.
+                 # 데이터를 복사하지 않고 대응만 기록한다. 새 달이 공개되어 다시 빌드하면 대응이 사라진다.
+                 "move_src": {m: max(x for x in od_months if x <= m) for m in months
+                              if m not in tables["od"] and any(x <= m for x in od_months)},
                  "base_cols": ["trades", "value_eok", "rent_contracts", "rent_new", "deposit_eok", "corp_trades", "equity_eok"],
                  "stat_cols": ["in_cnt", "out_cnt", "in_val", "out_val", "intra_cnt", "intra_val",
                                "nc_in_cnt", "nc_out_cnt", "nc_in_val", "nc_out_val"]},
@@ -205,6 +209,12 @@ def main(demo):
     data = build(load_tables(INTERIM), load_nodes(os.path.join(ROOT, "data", "regions_geo.json")), demo)
     dst = os.path.join(ROOT, "data", "flows.json")
     json.dump(data, open(dst, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    if not demo:
+        # 화면이 몇 월 자료까지 가졌는지 기록한다. check_updates.py 가 KOSIS 최신 공개 월과 비교한다(커밋 대상).
+        od = [m for m in data["meta"]["months"] if m not in data["meta"]["od_missing"]]
+        with open(os.path.join(ROOT, "data", "coverage.json"), "w", encoding="utf-8") as f:
+            json.dump({"od_latest": max(od) if od else None, "trade_latest": data["meta"]["months"][-1],
+                       "built_at": __import__("time").strftime("%Y-%m-%d")}, f, ensure_ascii=False, indent=1)
     m = data["meta"]
     print(f"wrote {dst}: {os.path.getsize(dst) / 1e6:.2f} MB, {len(m['months'])} months"
           + (f", OD 없는 달 {len(m['od_missing'])}개 (최근 가용 OD로 대체)" if m["od_missing"] else ""))
