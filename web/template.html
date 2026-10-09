@@ -96,6 +96,9 @@ button { touch-action: manipulation; }
 .zoom { position: absolute; right: 12px; top: 12px; display: grid; gap: 4px; }
 .zoom button { width: 32px; height: 32px; border: 1px solid var(--line); background: var(--panel); border-radius: var(--r-s); cursor: pointer; font-family: var(--font-num); font-size: 16px; color: var(--fg); }
 .hint .h-touch { display: none; }
+.hint .h-kz { display: none; }
+.zoomed .hint .h-kz { display: inline; }
+.zoomed .hint .h-k1 { display: none; }
 @media (pointer: coarse) { .hint .h-mouse { display: none; } .hint .h-touch { display: inline; } .hint { display: block !important; } }
 .hint { position: absolute; right: 12px; bottom: 12px; font-size: 11px; color: var(--muted); pointer-events: none; text-align: right; }
 .tip { position: absolute; pointer-events: none; min-width: 200px; max-width: 260px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-s); padding: 10px 12px; font-size: 12px; box-shadow: 0 10px 30px #0008; z-index: 3; }
@@ -237,7 +240,7 @@ button { touch-action: manipulation; }
         <button id="anim" aria-label="흐름 애니메이션 멈춤" aria-pressed="false">❚❚</button>
       </div>
       <div class="legend" id="legend"></div>
-      <div class="hint">지역을 누르면 유입·유출 상세<br><span class="h-mouse">휠과 드래그로 확대·이동</span><span class="h-touch">두 손가락으로 확대·이동</span></div>
+      <div class="hint">지역을 누르면 유입·유출 상세<br><span class="h-mouse">휠과 드래그로 확대·이동</span><span class="h-touch"><span class="h-k1">두 손가락으로 확대</span><span class="h-kz">한 손가락으로 이동, 오므리면 처음 화면</span></span></div>
       <div class="tip" id="tip" hidden></div>
       <div class="nodata" id="nodata" hidden></div>
     </div>
@@ -910,9 +913,12 @@ const D = /*__DATA__*/null;
 
   /* ---------- 상호작용 ----------
      마우스: 휠 확대, 드래그 이동.
-     터치: 협력형 제스처(Google 지도 임베드와 같은 방식).
-       두 손가락 = 핀치 확대·축소 + 이동, 한 손가락 = 페이지 스크롤(지도에 갇히지 않게), 짧은 탭 = 지역 선택.
-     CSS touch-action: pan-y 로 세로 스크롤만 브라우저에 맡기고 핀치는 여기서 처리한다. */
+     터치: 두 손가락 = 핀치 확대·축소 + 이동, 짧은 탭 = 지역 선택.
+       한 손가락 드래그는 확대 상태에 따라 역할이 바뀐다.
+         확대 안 함(k=1): 페이지 스크롤. 이 상태에선 지도 이동이 어차피 막혀 있어 충돌이 없다.
+         확대함(k>1)   : 지도 이동. 지도 바깥을 잡거나 오므려서 1배로 돌아가면 다시 스크롤.
+     브라우저는 손가락이 닿는 순간의 touch-action 으로 제스처 주인을 정하므로,
+     배율이 바뀔 때마다 syncTouchMode()로 미리 바꿔 둔다. */
   const ptrs = new Map();           // pointerId → {x, y} (지도 기준 좌표)
   let drag = null, pinch = null, moved = false, tapStart = null, drawQueued = false;
   const local = (e) => { const r = wrap.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
@@ -931,7 +937,7 @@ const D = /*__DATA__*/null;
     if (ptrs.size === 2) { startPinch(); return; }
     if (ptrs.size > 2) return;
     moved = false; tapStart = { ...p, t: performance.now() };
-    if (e.pointerType !== "touch") { drag = { x: p.x, y: p.y, tx: view.tx, ty: view.ty }; wrap.setPointerCapture(e.pointerId); }
+    if (e.pointerType !== "touch" || view.k > 1) { drag = { x: p.x, y: p.y, tx: view.tx, ty: view.ty }; wrap.setPointerCapture(e.pointerId); }
   });
   wrap.addEventListener("pointermove", (e) => {
     const p = local(e);
@@ -955,7 +961,16 @@ const D = /*__DATA__*/null;
   function endPointer(e, cancelled) {
     if (!ptrs.has(e.pointerId)) return;
     ptrs.delete(e.pointerId);
-    if (pinch) { if (ptrs.size < 2) pinch = null; return; }  // 핀치가 끝난 손가락은 탭으로 치지 않는다
+    if (pinch) {  // 핀치가 끝난 손가락은 탭으로 치지 않는다
+      if (ptrs.size < 2) {
+        pinch = null;
+        if (view.k < 1.1) { view.k = 1; clampView(); syncViewBtns(); requestDraw(); }
+        // 남은 한 손가락으로 바로 이어서 끌 수 있게 기준점을 다시 잡는다
+        const rest = [...ptrs.values()][0];
+        drag = rest && view.k > 1 ? { x: rest.x, y: rest.y, tx: view.tx, ty: view.ty } : null;
+      }
+      return;
+    }
     if (!cancelled && tapStart && !moved && ptrs.size === 0 && performance.now() - tapStart.t < 500) {
       const p = local(e), h = hitNode(p.x, p.y);
       setFocus(h === st.focus ? null : h);
@@ -995,6 +1010,11 @@ const D = /*__DATA__*/null;
   function syncViewBtns() {
     $("#view-all").setAttribute("aria-pressed", view.k === 1);
     $("#view-seoul").setAttribute("aria-pressed", view.k > 1);
+    syncTouchMode();
+  }
+  function syncTouchMode() {
+    wrap.style.touchAction = view.k > 1 ? "none" : "pan-y";
+    wrap.classList.toggle("zoomed", view.k > 1);
   }
   $("#zin").onclick = () => zoomAt(W / 2, H / 2, 1.5);
   $("#zout").onclick = () => zoomAt(W / 2, H / 2, 1 / 1.5);
