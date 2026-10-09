@@ -10,6 +10,7 @@
 수치는 공개 통계의 '규모감'에 맞춘 추정이며, 실제 통계가 아니다.
 """
 import csv, json, math, os, random, sys
+from pathlib import Path
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -65,7 +66,7 @@ def haversine(a, b):
 
 
 def load_anchors():
-    geo = json.load(open(os.path.join(ROOT, "data", "regions_geo.json"), encoding="utf-8"))
+    geo = json.loads(Path(os.path.join(ROOT, "data", "regions_geo.json")).read_text(encoding="utf-8"))
     return {r["code"]: ANCHOR_OVERRIDE.get(r["code"], (r["cx"], r["cy"])) for r in geo["regions"]}
 
 
@@ -223,7 +224,7 @@ def details(trade_rows, rent_rows):
     데모라고 표시해도 특정 단지의 거래 기록을 만들어낸 것이 된다.
     단지별 건수·금액 합계는 지역 합계와 정확히 같게 배분한다(실데이터도 같은 거래를 집계하므로 같아야 한다).
     """
-    geo = json.load(open(os.path.join(ROOT, "data", "regions_geo.json"), encoding="utf-8"))
+    geo = json.loads(Path(os.path.join(ROOT, "data", "regions_geo.json")).read_text(encoding="utf-8"))
     short = {r["code"]: r["short"] for r in geo["regions"]}
     cx = {}  # code → [(cid, weight, price_factor, deposit_factor, area)]
     meta_rows = []

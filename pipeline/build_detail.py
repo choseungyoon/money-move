@@ -11,6 +11,7 @@
   card:      basis(resident|merchant|local_currency), 월별 금액(억). 순위는 같은 basis끼리만.
 """
 import csv, json, os, sys
+from pathlib import Path
 from collections import defaultdict
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
@@ -82,7 +83,7 @@ def build(months, regions):
 
 
 def main():
-    flows = json.load(open(os.path.join(ROOT, "data", "flows.json"), encoding="utf-8"))
+    flows = json.loads(Path(os.path.join(ROOT, "data", "flows.json")).read_text(encoding="utf-8"))
     regions = [n for n in flows["nodes"] if n["code"] != "00000"]
     sizes = build(flows["meta"]["months"], regions)
     print(f"wrote {len(sizes)} detail files to {OUT}: total {sum(sizes) / 1e6:.2f} MB, max {max(sizes) / 1e3:.0f} KB")

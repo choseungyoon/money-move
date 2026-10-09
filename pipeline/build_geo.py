@@ -4,6 +4,7 @@
 출력: data/regions_geo.json  {regions:[{code,sido,name,short,cx,cy,rings:[[x,y,...]]}], bbox}
 """
 import csv, json, os, sys
+from pathlib import Path
 from collections import defaultdict
 from shapely.geometry import shape, box, mapping
 from shapely.ops import unary_union
@@ -23,7 +24,7 @@ def short_name(sido, sgg):
     return sgg
 
 def main(src, dst):
-    d = json.load(open(src, encoding="utf-8"))
+    d = json.loads(Path(src).read_text(encoding="utf-8"))
     groups, meta, kostat = defaultdict(list), {}, defaultdict(set)
     for f in d["features"]:
         p = f["properties"]

@@ -11,6 +11,7 @@
 출력: data/interim/card_month.csv  ym,code,amount_eok,count,basis
 """
 import csv, json, os
+from pathlib import Path
 from collections import defaultdict
 
 SEOUL_COLS = {"ym": "기준연월", "adm": "행정동코드", "amount": "카드이용금액", "count": "카드이용건수"}
@@ -52,7 +53,7 @@ def gyeonggi(src):
 
 
 def incheon(src, geo_path):
-    regions = json.load(open(geo_path, encoding="utf-8"))["regions"]
+    regions = json.loads(Path(geo_path).read_text(encoding="utf-8"))["regions"]
     by_name = {r["name"]: r["code"] for r in regions if r["sido"] == "인천"}
     acc = defaultdict(float)
     with open(src, encoding="utf-8-sig") as f:

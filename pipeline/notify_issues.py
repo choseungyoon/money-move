@@ -8,6 +8,7 @@
 판단(plan)은 순수 함수, GitHub 호출(apply)은 분리.
 """
 import json, os, re, sys, urllib.request
+from pathlib import Path
 
 API = "https://api.github.com"
 KINDS = {
@@ -84,7 +85,7 @@ def apply(actions, repo, call, open_issues=()):
 
 def main():
     root = os.path.join(os.path.dirname(__file__), "..")
-    status = json.load(open(os.path.join(root, "data", "update_status.json"), encoding="utf-8"))
+    status = json.loads(Path(os.path.join(root, "data", "update_status.json")).read_text(encoding="utf-8"))
     token, repo = os.environ.get("GITHUB_TOKEN"), os.environ.get("GITHUB_REPOSITORY")
     if not token or not repo:
         sys.exit("GITHUB_TOKEN, GITHUB_REPOSITORY 가 필요합니다(GitHub Actions에서 실행).")

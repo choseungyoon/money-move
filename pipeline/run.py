@@ -16,6 +16,7 @@
             data/raw/card_incheon.csv      (인천e음 군구별 결제금액)
 """
 import argparse, glob, gzip, hashlib, json, os, shutil, subprocess, sys
+from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.join(HERE, "..")
@@ -28,6 +29,20 @@ def months(a, b):
         out.append(f"{y}-{m:02d}"); m += 1
         if m == 13: y, m = y + 1, 1
     return out
+
+
+def load_dotenv(path=os.path.join(ROOT, ".env")):
+    """로컬 개발용: 저장소 루트 .env의 KEY=VALUE를 환경변수로 읽는다(이미 설정된 값은 덮지 않는다).
+    GitHub Actions는 .env 없이 Secrets를 쓴다."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                if v.strip():
+                    os.environ.setdefault(k.strip(), v.strip().strip("'\""))
 
 
 def py(script, *args):
@@ -63,6 +78,7 @@ def main():
     ap.add_argument("--to", dest="end", default="2026-08")
     ap.add_argument("--refresh-all", action="store_true", help="캐시를 무시하고 요청 기간 전체를 다시 받는다")
     a = ap.parse_args()
+    load_dotenv()
     if a.mode == "mdis":
         paths = mdis_raw_files(os.path.join(ROOT, "data", "raw"))
         if not paths:
@@ -77,7 +93,7 @@ def main():
         key = os.environ.get("MOLIT_KEY") or sys.exit("MOLIT_KEY 환경변수가 필요합니다.")
         interim = os.path.join(ROOT, "data", "interim"); os.makedirs(interim, exist_ok=True)
         raw = os.path.join(ROOT, "data", "raw")
-        codes = [r["code"] for r in json.load(open(os.path.join(ROOT, "data", "regions_geo.json"), encoding="utf-8"))["regions"]]
+        codes = [r["code"] for r in json.loads(Path(os.path.join(ROOT, "data", "regions_geo.json")).read_text(encoding="utf-8"))["regions"]]
         ms = months(a.start, a.end)
         # 캐시 재사용 정책: 계약월이 오늘로부터 몇 개월 전인지에 따라 다시 받는 주기가 다르다(molit.RefreshPolicy)
         client = molit.Client(key, cache_dir=os.path.join(raw, "molit"), policy=molit.RefreshPolicy(),
@@ -87,7 +103,7 @@ def main():
         # 부동산원·MDIS는 수동 다운로드 자료다. 새 파일이 없으면 기존 중간 테이블을 그대로 쓴다.
         manifest_path = os.path.join(raw, "manifest.json")
         try:
-            manifest = json.load(open(manifest_path, encoding="utf-8"))
+            manifest = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
         except (OSError, ValueError):
             manifest = {}
 

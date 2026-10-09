@@ -1,5 +1,6 @@
 """단지별 집계·소득·카드·지역 상세 파일."""
 import csv, json, os, sys, tempfile, unittest
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 from sources import molit, nts_income, card  # noqa: E402
@@ -83,7 +84,7 @@ class DetailFileTest(unittest.TestCase):
                 bd.build(["2025-03"], [{"code": "11680", "name": "강남구"}])
             finally:
                 bd.INTERIM, bd.OUT = old
-            doc = json.load(open(os.path.join(out, "11680.json"), encoding="utf-8"))
+            doc = json.loads(Path(os.path.join(out, "11680.json")).read_text(encoding="utf-8"))
         self.assertEqual(sum(r[2] for r in doc["trade"]), 3)       # 단지 정보에 없는 c9도 버리지 않는다
         self.assertEqual(len(doc["complexes"]), 2)
         self.assertIsNone(doc["income"]); self.assertIsNone(doc["card"])

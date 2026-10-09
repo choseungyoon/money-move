@@ -10,6 +10,7 @@
 보유 자료: data/coverage.json (실데이터 빌드 때 생성·커밋). 출력: data/update_status.json
 """
 import json, os, sys, time
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(__file__))
 from sources import kosis  # noqa: E402
@@ -47,7 +48,7 @@ def check(coverage, published):
 
 def main():
     try:
-        coverage = json.load(open(COVERAGE, encoding="utf-8"))
+        coverage = json.loads(Path(COVERAGE).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         coverage = None
     published, err = None, None

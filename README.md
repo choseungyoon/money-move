@@ -4,10 +4,17 @@
 어디서 어디로 움직이는지 항공 관제판처럼 보여주는 정적 웹 서비스.
 
 ```bash
-python3 pipeline/run.py demo                                   # 데모 데이터 → dist/index.html
-MOLIT_KEY=... python3 pipeline/run.py real --from 2024-01 --to 2026-08
-python3 -m unittest discover -s tests                         # 테스트
+git clone https://github.com/choseungyoon/money-move.git && cd money-move
+bash scripts/setup.sh                                         # Python 3.10+ 확인, .env·data/raw 준비, 테스트, 데모 빌드
+python3 -m http.server -d dist 8000                           # http://localhost:8000
+
+python3 pipeline/run.py demo                                  # 데모 데이터 → dist/index.html
+python3 pipeline/run.py real --from 2024-01 --to 2026-08      # 실데이터 (.env의 MOLIT_KEY, KOSIS_KEY)
+bash scripts/check.sh                                         # push 전 점검 (CI와 동일)
 ```
+
+인증키는 로컬에서는 `.env`(`.env.example` 복사, 커밋 안 됨), GitHub Actions에서는 Secrets에 둔다.
+작업 규칙과 데이터 함정은 `CLAUDE.md`에 정리돼 있다(Claude Code가 자동으로 읽는다).
 
 실데이터 모드에 필요한 수동 다운로드 자료:
 

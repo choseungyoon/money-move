@@ -1,9 +1,10 @@
 """dist/ 생성: index.html(흐름 데이터 인라인) + detail/{code}.json(지역 상세, 누를 때 받음)."""
 import json, os, shutil
+from pathlib import Path
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 DIST = os.path.join(ROOT, "dist")
-data = json.load(open(os.path.join(ROOT, "data", "flows.json"), encoding="utf-8"))
+data = json.loads(Path(os.path.join(ROOT, "data", "flows.json")).read_text(encoding="utf-8"))
 detail_src = os.path.join(ROOT, "data", "detail")
 data["meta"]["detail"] = os.path.isdir(detail_src)
 tpl = open(os.path.join(ROOT, "web", "template.html"), encoding="utf-8").read()

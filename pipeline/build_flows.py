@@ -19,6 +19,7 @@
   other     : 나머지 수도권 + 비수도권
 """
 import csv, json, os, sys
+from pathlib import Path
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
@@ -168,7 +169,7 @@ def summarize(mat, layer, idx):
 
 
 def load_nodes(geo_path):
-    geo = json.load(open(geo_path, encoding="utf-8"))
+    geo = json.loads(Path(geo_path).read_text(encoding="utf-8"))
     nodes = []
     for r in geo["regions"]:
         ax, ay = ANCHOR_OVERRIDE.get(r["code"], (r["cx"], r["cy"]))

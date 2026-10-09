@@ -10,6 +10,7 @@ data/raw/nts_income.csv 로 둔다. 연 단위이고, 'N년 귀속' 자료가 �
 출력: data/interim/income_year.csv  year,code,earners,total_pay_eok,avg_pay_manwon,level
 """
 import csv, json, os
+from pathlib import Path
 
 COLS = {"year": "귀속연도", "sido": "시도", "sgg": "시군구", "earners": "인원", "total_pay": "총급여"}
 UNIT_TO_EOK = 1 / 100  # 총급여가 백만원 단위라고 가정 (억 = 백만원 / 100)
@@ -22,7 +23,7 @@ def _num(s):
 
 
 def load(src, dst, geo_path):
-    regions = json.load(open(geo_path, encoding="utf-8"))["regions"]
+    regions = json.loads(Path(geo_path).read_text(encoding="utf-8"))["regions"]
     by_name = {(r["sido"], r["name"].replace(" ", "")): r["code"] for r in regions}
     out = []
     with open(src, encoding="utf-8-sig") as f:

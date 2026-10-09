@@ -12,3 +12,6 @@ dist/
 data/flows.json
 data/detail/
 data/update_status.json
+
+# 로컬 인증키
+.env
