@@ -1,0 +1,17 @@
+name: kosis-probe
+# KOSIS 응답 구조 진단(수동 실행). 결과는 실행 주석(annotations)으로 남는다.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - env:
+          KOSIS_KEY: ${{ secrets.KOSIS_KEY }}
+        run: python pipeline/kosis_probe.py
