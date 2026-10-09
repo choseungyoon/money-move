@@ -3,7 +3,7 @@
 입력: vuski/admdongkor 행정동 경계 (ver20230701)
 출력: data/regions_geo.json  {regions:[{code,sido,name,short,cx,cy,rings:[[x,y,...]]}], bbox}
 """
-import json, sys
+import csv, json, os, sys
 from collections import defaultdict
 from shapely.geometry import shape, box, mapping
 from shapely.ops import unary_union
@@ -24,12 +24,13 @@ def short_name(sido, sgg):
 
 def main(src, dst):
     d = json.load(open(src, encoding="utf-8"))
-    groups, meta = defaultdict(list), {}
+    groups, meta, kostat = defaultdict(list), {}, defaultdict(set)
     for f in d["features"]:
         p = f["properties"]
         if p["sido"] not in SIDO:
             continue
         groups[p["sgg"]].append(shape(f["geometry"]).buffer(0))
+        kostat[p["sgg"]].add(p["adm_cd"][:5])  # adm_cd 앞 5자리 = 통계청 시군구 코드
         meta[p["sgg"]] = (SIDO[p["sido"]], p["sggnm"])
     out = []
     for code, geoms in sorted(groups.items()):
@@ -51,6 +52,13 @@ def main(src, dst):
     ys = [v for r in out for ring in r["rings"] for v in ring[1::2]]
     json.dump({"bbox": [min(xs), min(ys), max(xs), max(ys)], "regions": out},
               open(dst, "w", encoding="utf-8"), ensure_ascii=False, separators=(",", ":"))
+    # 행정안전부 ↔ 통계청 시군구 코드 대응표. 통계청 자료(MDIS 등)는 시도부터 다르다(인천 23, 경기 31)
+    # 일부 코드(11110 등)는 두 체계에 모두 있지만 가리키는 구가 달라 대응표 없이 쓰면 조용히 틀린다.
+    with open(os.path.join(os.path.dirname(dst), "sgg_codes.csv"), "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f); w.writerow(["code", "kostat", "sido", "name"])
+        for code in sorted(kostat):
+            assert len(kostat[code]) == 1, (code, kostat[code])
+            w.writerow([code, next(iter(kostat[code])), meta[code][0], meta[code][1]])
     print(len(out), "regions,", sum(len(ring) for r in out for ring in r["rings"]) // 2, "points")
 
 if __name__ == "__main__":

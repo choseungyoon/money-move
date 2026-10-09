@@ -41,5 +41,37 @@ class MdisTest(unittest.TestCase):
         self.assertEqual(rows, {("11680", "41135"): 2, ("00000", "11680"): 1, ("11500", "41190"): 1})
 
 
+class MdisSchemeTest(unittest.TestCase):
+    """통계청 코드(인천 23, 경기 31)와 행정안전부 코드(28, 41)를 판별해 같은 결과로 만든다."""
+    def write(self, d, rows):
+        with open(os.path.join(d, "x.csv"), "w", encoding="cp949", newline="") as f:
+            w = csv.writer(f); w.writerow(list(mdis.COLS.values())); w.writerows(rows)
+        dst = os.path.join(d, "od.csv")
+        info = mdis.load(os.path.join(d, "*.csv"), dst)
+        with open(dst, encoding="utf-8") as f:
+            return info, {(r["src"], r["dst"]): int(r["persons"]) for r in csv.DictReader(f)}
+
+    def test_kostat_codes_mapped_not_dropped_as_noncapital(self):
+        with tempfile.TemporaryDirectory() as d:
+            # 통계청: 강남 11230 → 분당 31023, 인천 중구 23010 → 수원 장안 31011
+            info, rows = self.write(d, [["2026", "5", "31", "023", "11", "230", "3"],
+                                        ["2026", "5", "31", "011", "23", "010", "3"]])
+        self.assertEqual(info["scheme"], "kostat")
+        self.assertEqual(rows, {("11680", "41135"): 1, ("28110", "41111"): 1})
+
+    def test_ambiguous_seoul_only_codes(self):
+        # 11230 은 통계청에선 강남구, 행정안전부에선 동대문구. 서울만 있으면 대응표에 맞는 행이 많은 쪽으로 판별
+        with tempfile.TemporaryDirectory() as d:
+            info, rows = self.write(d, [["2026", "5", "11", "230", "11", "010", "3"],   # 종로(11010) → 강남(11230)
+                                        ["2026", "5", "11", "250", "11", "020", "3"]])  # 중구(11020) → 강동(11250)
+        self.assertEqual(info["scheme"], "kostat")
+        self.assertEqual(rows, {("11110", "11680"): 1, ("11140", "11740"): 1})
+
+    def test_unknown_capital_codes_fail_loudly(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(ValueError):
+                self.write(d, [["2026", "5", "31", "999", "11", "230", "3"]] * 5)
+
+
 if __name__ == "__main__":
     unittest.main()

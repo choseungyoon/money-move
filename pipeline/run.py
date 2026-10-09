@@ -71,7 +71,7 @@ def main():
 
         for name, loader, src, dst in (
             ("부동산원 매입자거주지", reb.load, os.path.join(raw, "reb_buyer_residence.csv"), "buyer_origin_share.csv"),
-            ("MDIS 인구이동", mdis.load, os.path.join(raw, "mdis", "*.csv"), "migration_od_month.csv"),
+            ("MDIS 인구이동", lambda s, d: print("MDIS:", mdis.load(s, d)), os.path.join(raw, "mdis", "*.csv"), "migration_od_month.csv"),
         ):
             if glob.glob(src) and (changed(*glob.glob(src)) or not os.path.exists(os.path.join(interim, dst))):
                 loader(src, os.path.join(interim, dst))

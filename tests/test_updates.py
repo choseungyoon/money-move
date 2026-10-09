@@ -34,3 +34,33 @@ class CheckTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotifyTest(unittest.TestCase):
+    def setUp(self):
+        import notify_issues
+        self.n = notify_issues
+
+    def test_close_when_data_caught_up(self):
+        acts = self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}, {"number": 2, "title": "다른 이슈"}], "2026-08", "2026-08")
+        self.assertEqual([a[:2] for a in acts], [("close", 1)])
+        self.assertEqual(acts[0][3], "completed")
+
+    def test_supersede_older_alert_and_no_duplicate(self):
+        acts = self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], "2026-05", "2026-09")
+        self.assertEqual([a[:2] for a in acts], [("create", "인구이동 2026-09 자료 공개됨"), ("close", 1)])
+        self.assertEqual(acts[1][3], "not_planned")
+        self.assertEqual(self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], None, "2026-08"), [])
+
+    def test_unknown_published_never_closes_or_creates(self):
+        self.assertEqual(self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], "2026-05", None), [])
+
+    def test_apply_creates_before_closing_and_links(self):
+        calls = []
+        def call(m, p, b=None):
+            calls.append((m, p, b))
+            return {"number": 7} if m == "POST" and p.endswith("/issues") else {}
+        self.n.apply(self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], None, "2026-09", "msg"), "o/r", call)
+        self.assertEqual(calls[0][:2], ("POST", "/repos/o/r/issues"))
+        self.assertIn("#7", calls[1][2]["body"])
+        self.assertEqual(calls[2], ("PATCH", "/repos/o/r/issues/1", {"state": "closed", "state_reason": "not_planned"}))
