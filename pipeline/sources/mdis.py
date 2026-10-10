@@ -55,6 +55,14 @@ DECISIVE = 1000        # 한 체계에만 있는 시도 코드가 이만큼 나�
 # 새 구 코드 → 기존 지역(부천 2024, 화성 2026-02, 인천 2026-07). 행정안전부 체계. OD라 합쳐도 이중 계산이 없다.
 # 제물포구(28125)는 옛 중구·동구에 걸쳐 시군구 코드만으로 나눌 수 없어 에러(읍면동 코드로 나누려면 행정동 대응표 필요).
 from .molit import CODE_ALIAS as ALIAS, SPLIT  # noqa: E402
+# 화성 구 신설(2026-02-01) 전 자료는 화성시(41590) 하나로 온다. 행정동 코드로 4개 구에 나눈다.
+# 근거: 행정안전부 '화성시 행정구역 변경 상세내역'의 변경 전 행정동 코드. MDIS 2023~25 의 화성 행정동 29종이 빠짐없이 맞는다
+# (63000 동탄9동은 2023-07 신설). 행정동 경계로 나누므로 법정동 단위 조정(동탄1동에서 반월동 제외)은 근사로 남는다.
+_HWASEONG = {"41591": "25600 25900 26200 33000 34000 35000 36000 37000 40000 51500",   # 만세구: 우정·향남·남양·마도·송산·서신·팔탄·장안·양감·새솔
+             "41593": "25300 31000 32000 41000 56000",                                 # 효행구: 봉담·매송·비봉·정남·기배
+             "41595": "52000 53000 54000 55000 57000",                                 # 병점구: 진안·병점1·병점2·반월·화산
+             "41597": "58500 58600 58700 58800 59000 60000 61000 62000 63000"}         # 동탄구: 동탄1~9
+SPLIT_EMD = {"41590": {e: gu for gu, es in _HWASEONG.items() for e in es.split()}}
 CODES = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sgg_codes.csv")
 SCHEMES = {"mois": {"11", "28", "41"}, "kostat": {"11", "23", "31"}}  # 체계별 수도권 시도 코드
 INCHEON = {"mois": "28", "kostat": "23"}
@@ -205,13 +213,18 @@ def load(src, dst, codes_path=CODES):
         table, capital = codes[scheme], SCHEMES[scheme]
         cap_rows, unmapped = 0, Counter()
 
-        def to_code(sd, sgg):
+        def to_code(sd, sgg, emd):
             nonlocal cap_rows
             sd = sd.strip()
             if sd not in capital:
                 return NONCAP
             cap_rows += 1
             c = _code5(sd, sgg)
+            if scheme == "mois" and c in SPLIT_EMD:
+                gu = SPLIT_EMD[c].get(emd.strip())
+                if gu is None:
+                    unmapped[f"{c}:{emd.strip()}"] += 1   # 표에 없는 행정동: UNMAPPED_LIMIT 로 크게 실패한다
+                return gu
             if scheme == "mois" and c in SPLIT:
                 raise ValueError(f"{os.path.basename(path)}: {c}(제물포구)는 기존 지역으로 나눌 수 없습니다. mdis.py 주석 참고.")
             if c not in table:
@@ -230,7 +243,7 @@ def load(src, dst, codes_path=CODES):
             yc["to_outside"] += to_sd not in capital
             if (fr_sd, r[c["fr_sgg"]].strip(), r[c["fr_emd"]].strip()) == (to_sd, r[c["to_sgg"]].strip(), r[c["to_emd"]].strip()):
                 continue  # 같은 읍면동 안 이사: 인구이동통계 집계 대상이 아니다. ALIAS 로 합치기 전 코드로 비교한다
-            a, b = to_code(fr_sd, r[c["fr_sgg"]]), to_code(to_sd, r[c["to_sgg"]])
+            a, b = to_code(fr_sd, r[c["fr_sgg"]], r[c["fr_emd"]]), to_code(to_sd, r[c["to_sgg"]], r[c["to_emd"]])
             if a is None or b is None or a == b == NONCAP:
                 continue
             people = int(float(r[c["persons"]] or 1)) if c["persons"] else 1

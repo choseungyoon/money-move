@@ -155,6 +155,9 @@ def main():
             msg = f"부동산원 매입자거주지: {info['rows']:,}행 ({info['months'][0]}~{info['months'][-1]})"
             if info["empty"]:
                 msg += f", 전 기간 거래 없음 {info['empty']}"
+            if info.get("fallback"):
+                fb = info["fallback"]
+                msg += f", 구 신설 전이라 시 비중을 쓴 지역 {len(fb)}개({min(min(v) for v in fb.values())}~{max(max(v) for v in fb.values())})"
             if info["gaps"]:
                 msg += f", 자료 없는 달 {{{', '.join(f'{c}: {len(m)}개월' for c, m in sorted(info['gaps'].items()))}}}"
             print(msg)

@@ -66,7 +66,8 @@ class MolitTest(unittest.TestCase):
         self.assertNotIn(("2025-03", "41192"), rows)
 
     def test_fetch_merges_2026_reform_codes(self):
-        """국토부 API는 과거 달도 새 코드로만 준다(옛 코드는 0건, molit-probe 2026-10). 새 코드를 기존 지역으로 합친다."""
+        """국토부 API는 과거 달도 새 코드로만 준다(옛 코드는 0건, molit-probe 2026-10).
+        인천 새 구는 옛 지역으로 합치고, 화성 구는 합치지 않고 구별 지역으로 둔다(2026-10 부터)."""
         routes = {
             ("AptTrade", "41591", 1): xml([{"dealAmount": "40,000"}] * 2),           # 화성 만세구
             ("AptTrade", "41597", 1): xml([{"dealAmount": "60,000"}]),               # 화성 동탄구
@@ -78,12 +79,12 @@ class MolitTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as d:
             client = molit.Client("KEY", cache_dir=os.path.join(d, "cache"), getter=FakeGetter(routes))
-            molit.fetch(client, ["41590", "28110", "28140", "28260"], ["2026-08"], d)
+            molit.fetch(client, ["41591", "41597", "28110", "28140", "28260"], ["2026-08"], d)
             with open(os.path.join(d, "trade_region_month.csv"), encoding="utf-8") as f:
                 trades = {r["code"]: r["trades"] for r in csv.DictReader(f)}
             with open(os.path.join(d, "complexes.csv"), encoding="utf-8") as f:
                 umd = {r["umd"]: r["code"] for r in csv.DictReader(f)}
-        self.assertEqual(trades, {"41590": "3", "28110": "2", "28140": "3", "28260": "3"})
+        self.assertEqual(trades, {"41591": "2", "41597": "1", "28110": "2", "28140": "3", "28260": "3"})
         self.assertEqual((umd["송림동"], umd["신흥동3가"]), ("28140", "28110"))
 
     def test_unknown_dong_in_split_code_raises(self):

@@ -12,12 +12,12 @@ R-ONE 통계표를 내려받은 CSV를 그대로 읽는다(2026-10 실제 파일
   이 표에는 지역 코드가 없어 이름으로 맞춘다. 시도·시군구·일반구 3개 열을 조합한다.
   (서울, 종로구, 종로구) / (경기, 수원시, 장안구) / (인천, 부평구, 부평구)
   개편으로 폐지된 구는 '(구)' 접두어가 붙는다(인천 2026-07: (구)중구·(구)동구·(구)서구).
-  전국이 들어 있어도 우리 77개만 고른다.
+  전국이 들어 있어도 우리 80개만 고른다.
 
 행정구역 개편 (국토부 실거래 API와 반대다)
   실거래 API는 과거 거래까지 새 코드로 다시 매긴다(옛 코드는 전 기간 0건).
   R-ONE은 시점으로 나눈다: 옛 구는 개편 전 달까지, 새 구는 개편 후 달부터. 그래서 REFORM 으로 옛·새
-  이름을 모두 등록하고 달마다 값이 있는 행을 더해 우리 77개 체계로 되돌린다.
+  이름을 모두 등록하고 달마다 값이 있는 행을 더해 우리 80개 체계로 되돌린다.
   그래도 비는 (달, 지역)은 0으로 채우지 않고 뺀다. 조용히 0을 넣으면 그 지역 매매 자금 출발지가 전부 0이 된다.
   행이 아예 없으면(이름 대응 실패) 에러, 행은 있는데 전 기간 거래가 0이면 empty 로 알린다(옹진군).
 
@@ -31,7 +31,10 @@ R-ONE 통계표를 내려받은 CSV를 그대로 읽는다(2026-10 실제 파일
 import csv, json, os, re
 from pathlib import Path
 
-GU_SI = ("수원시", "성남시", "안양시", "안산시", "고양시", "용인시")  # 일반구가 있는 경기 6개 시
+GU_SI = ("수원시", "성남시", "안양시", "안산시", "고양시", "용인시", "화성시")  # 일반구가 있는 경기 시
+# 구 신설 전에는 구별 행이 없는 시: 그 달은 시 행의 비중을 구에 공통으로 쓴다(화성 구는 2026-02 부터 나온다).
+# 비중만 쓰므로 건수가 겹쳐도 총량은 왜곡되지 않는다. 쓴 달은 fallback 으로 알린다.
+CITY_FALLBACK = {"화성시"}
 SIDO = {"11": "서울", "28": "인천", "41": "경기"}
 # 인천 2026-07 개편. 옛 구('(구)' 접두어)는 개편 전 달까지, 새 구는 개편 후 달부터 값이 있으므로
 # 두 이름을 모두 등록하고 달마다 값이 있는 행만 더한다(분기가 필요 없다).
@@ -89,21 +92,30 @@ def load(src, dst, geo_path=GEO):
     if not table:
         raise ValueError(f"{os.path.basename(src)}: 항목이 '{ITEM}'인 행이 없습니다. 항목 열 값: {sorted({r[5] for r in body})[:5]}")
     regions = json.loads(Path(geo_path).read_text(encoding="utf-8"))["regions"]
-    out, gaps, unmapped, empty = [], {}, [], []
+    out, gaps, unmapped, empty, fallback = [], {}, [], [], {}
     for reg in regions:
         code, keys = reg["code"], region_keys(reg["name"], reg["code"])
         picked = {b: [table[(*k, kr)] for k in keys if (*k, kr) in table] for b, kr in BUCKETS.items()}
-        if not any(picked.values()):
+        if not any(picked.values()) and not any(k[1] in CITY_FALLBACK for k in keys):
             unmapped.append((code, reg["name"], keys))
             continue
-        blank = []
+        city = next((k[1] for k in keys if k[1] in CITY_FALLBACK and k[1] != k[2]), None)
+        city_rows = {b: [table[(SIDO[code[:2]], city, city, kr)]] if city and (SIDO[code[:2]], city, city, kr) in table else []
+                     for b, kr in BUCKETS.items()}
+        blank, used_city = [], []
         for ym, i in sorted(months.items()):
             vals = [_sum(picked[b], i) for b in OUT_COLS[2:]]
+            if city and not sum(v for v in vals if v is not None):
+                vals = [_sum(city_rows[b], i) for b in OUT_COLS[2:]]
+                if sum(v for v in vals if v is not None):
+                    used_city.append(ym)
             s = sum(v for v in vals if v is not None)
             if not s:
                 blank.append(ym)
                 continue
             out.append([ym, code] + [round((v or 0) / s, 4) for v in vals])
+        if used_city:
+            fallback[code] = used_city
         if len(blank) == len(months):
             empty.append(code)  # 행은 있는데 전 기간 거래 0 (예: 옹진군 - 섬, 아파트 거래 없음)
         elif blank:
@@ -113,4 +125,4 @@ def load(src, dst, geo_path=GEO):
                          f"{unmapped[:5]}. 시도·시군구·일반구 이름이 표와 같은지, 서울·인천·경기가 모두 들어 있는지 확인하세요.")
     with open(dst, "w", newline="", encoding="utf-8") as g:
         w = csv.writer(g); w.writerow(OUT_COLS); w.writerows(out)
-    return {"rows": len(out), "months": sorted(months), "gaps": gaps, "empty": empty}
+    return {"rows": len(out), "months": sorted(months), "gaps": gaps, "empty": empty, "fallback": fallback}

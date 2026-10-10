@@ -78,6 +78,19 @@ class RebTest(unittest.TestCase):
         self.assertEqual(got[("2025-03", "28110")]["same_sgg"], "0.5")   # 개편 전 달은 옛 구만
         self.assertNotIn("28110", info["gaps"])
 
+    def test_hwaseong_gu_falls_back_to_city_before_reform(self):
+        """화성 구는 2026-02 부터 R-ONE 에 나온다. 그 전 달은 화성시 비중을 쓰고 fallback 으로 알린다."""
+        rows, n = [], 0
+        for b, a in (("관할시군구내", "60"), ("관할시도내", "20"), ("관할시도외_서울", "20"), ("관할시도외_기타", "0")):
+            n += 1; rows.append(reb_row(n, "경기", "화성시", "화성시", b, "동(호)수", a, "999"))    # 시 행(둘째 달은 쓰지 않는다)
+        for b, a in (("관할시군구내", "10"), ("관할시도내", "10"), ("관할시도외_서울", "30"), ("관할시도외_기타", "0")):
+            n += 1; rows.append(reb_row(n, "경기", "화성시", "동탄구", b, "동(호)수", "-", a))      # 구 행은 둘째 달부터
+        with tempfile.TemporaryDirectory() as d:
+            info, got = self.write(d, rows, geo={"regions": [{"code": "41597", "name": "화성시동탄구"}]})
+        self.assertEqual(got[("2025-03", "41597")]["seoul"], "0.2")    # 시 비중
+        self.assertEqual(got[("2025-04", "41597")]["seoul"], "0.6")    # 구 비중(시 행 999는 섞이지 않는다)
+        self.assertEqual(info["fallback"], {"41597": ["2025-03"]})
+
     def test_unmapped_region_fails_loudly(self):
         """이름이 표와 다르면(또는 추출 범위에 빠졌으면) 조용히 지나가지 않는다."""
         with tempfile.TemporaryDirectory() as d:
@@ -125,7 +138,7 @@ class MdisTest(unittest.TestCase):
             rows = run([["2026", "8", "41", "597", "11", "680", "3"],    # 강남 → 동탄구: 화성
                         ["2026", "8", "28", "290", "28", "275", "3"],    # 서해구 → 검단구: 옛 서구 안 이동
                         ["2026", "8", "28", "155", "41", "591", "3"]])   # 만세구 → 영종구: 화성 → 중구
-            self.assertEqual(rows, {("11680", "41590"): 1, ("28260", "28260"): 1, ("41590", "28110"): 1})
+            self.assertEqual(rows, {("11680", "41597"): 1, ("28260", "28260"): 1, ("41591", "28110"): 1})   # 화성 구는 그대로
             with self.assertRaises(ValueError):
                 run([["2026", "8", "28", "125", "11", "680", "3"]])     # 제물포구: 중구·동구로 나눌 수 없음
 
@@ -250,6 +263,29 @@ class MdisSampleFormatTest(unittest.TestCase):
             mdis.load([os.path.join(d, "b.txt")], os.path.join(d, "od.csv")); b = self.od(d)
         self.assertEqual(a, b)
         self.assertEqual(a[("2025-09", "00000", "28110")], (2, 2, 1))
+
+    def test_hwaseong_city_split_into_gu_by_dong_code(self):
+        """구 신설(2026-02) 전 자료의 화성시(41590)는 행정동 코드로 4개 구에 나눈다. 표에 없는 행정동은 크게 실패한다."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "2025.csv"), "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f); w.writerow(HEADER_2025)
+                w.writerow(hh("41590", "11680", "3", 2, emd=("58500", "00000")))   # 강남 → 동탄1동: 동탄구
+                w.writerow(hh("41590", "41590", "3", 1, emd=("25300", "58500")))   # 동탄1동 → 봉담읍: 동탄구 → 효행구
+                w.writerow(hh("41590", "41590", "3", 4, emd=("25900", "26200")))   # 남양읍 → 향남읍: 만세구 안
+                w.writerow(hh("28110", "26350"))                                   # 체계 판별·추출 조건용
+                w.writerow(hh("26350", "28110"))
+            mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))
+            od = self.od(d)
+        self.assertEqual(od[("2025-09", "11680", "41597")][0], 2)
+        self.assertEqual(od[("2025-09", "41597", "41593")][0], 1)
+        self.assertEqual(od[("2025-09", "41591", "41591")][0], 4)
+        self.assertFalse(any(k[1] == "41590" or k[2] == "41590" for k in od))
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "2025.csv"), "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f); w.writerow(HEADER_2025)
+                w.writerows([hh("41590", "11680", emd=("99999", "00000"))] * 50 + [hh("28110", "26350"), hh("26350", "28110")])
+            with self.assertRaisesRegex(ValueError, "41590:99999"):
+                mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))
 
     def test_bucheon_cross_gu_kept_even_when_emd_code_repeats(self):
         """부천 41192/41194 는 ALIAS 로 둘 다 41190 이 된다. 구별로 읍면동 코드가 겹쳐도 같은 동 이사로 보면 안 된다."""
