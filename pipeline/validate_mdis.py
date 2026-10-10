@@ -22,10 +22,13 @@ FIELDS = ("in_total", "out_total", "intra")
 
 
 def mdis_margins(od_rows):
-    """OD 행(ym,src,dst,persons_all…) → {(ym, code): {in_total, out_total, intra}} (수도권 시군구만)."""
+    """OD 행(ym,src,dst,persons_all…) → {(ym, code): {in_total, out_total, intra}} (수도권 시군구만).
+    KOSIS처럼 경기 일반구는 시로 묶는다(구 사이 이동은 시군구 내)."""
+    from sources.kosis import SI_OF_GU
     m = defaultdict(lambda: dict.fromkeys(FIELDS, 0))
     for r in od_rows:
-        ym, a, b, n = r["ym"], r["src"], r["dst"], int(r["persons_all"])
+        ym, n = r["ym"], int(r["persons_all"])
+        a, b = SI_OF_GU.get(r["src"], r["src"]), SI_OF_GU.get(r["dst"], r["dst"])
         if a != NONCAP:
             m[(ym, a)]["out_total"] += n
         if b != NONCAP:

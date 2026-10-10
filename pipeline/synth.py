@@ -16,6 +16,7 @@ from collections import defaultdict
 sys.path.insert(0, os.path.dirname(__file__))
 from regions import PRIORS, ANCHOR_OVERRIDE, NONCAP  # noqa: E402
 from leverage import equity  # noqa: E402
+from sources.kosis import SI_OF_GU  # noqa: E402
 
 random.seed(20261008)
 ROOT = os.path.join(os.path.dirname(__file__), "..")
@@ -201,10 +202,12 @@ def main():
     write("buyer_origin_share.csv", ["ym", "code", "same_sgg", "same_sido", "seoul", "other"], share_rows)
     write("migration_od_month.csv", ["ym", "src", "dst", "persons", "persons_all", "households", "households_all"], mig_rows)
     # KOSIS 시군구별 월 총계(총전입·총전출·시군구 내 이동)는 실제 이동에서 집계: 비수도권 노드는 KOSIS에 없음
+    # 실제 KOSIS처럼 경기 일반구는 시로 묶는다(구 사이 이동은 시군구 내로 잡힌다)
     mg = defaultdict(lambda: [0, 0, 0])
     for ym, i, j, n, all_n in truth_rows:
         if ym > KOSIS_LAST:
             continue
+        i, j = SI_OF_GU.get(i, i), SI_OF_GU.get(j, j)
         if j != NONCAP["code"]:
             mg[(ym, j)][0] += all_n
         if i != NONCAP["code"]:
