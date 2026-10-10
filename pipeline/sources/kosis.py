@@ -71,9 +71,32 @@ SI_OF_GU = {c: c[:4] + "0" for c in ("41111", "41113", "41115", "41117", "41131"
 #   제대로 추정하려면 MDIS 원자료(읍면동 코드가 있다)에서 옛 구 내부 이동을 새 구로 나눠 비율을 구해야 하고,
 #   그러려면 새 구별 법정동 '코드' 목록이 필요하다. molit.py 의 _JUNGGU/_DONGGU 는 제물포구 분할용 '이름'
 #   목록이어서 MDIS(코드)에는 쓸 수 없고, 서해·검단·영종 목록도 아직 없다.
-#   자료가 생기기 전까지는 그 달을 KOSIS 에서 통째로 버린다(아래 dropped). 매매·전월세는 국토부 자료라
-#   영향이 없고, 그 달의 인구이동만 estimate_od 가 추정하지 않아 화면에 '직전 달 대체'로 표시된다.
-#   KOSIS 실패가 매매 레이어까지 막지 않게 하려는 것이다(에러로 막으면 2026-07·08 실거래가 멀쩡한데도 안 보인다).
+#   X 를 MDIS 2023~25 행정동 쌍 집계로 추정해 복원한다(REFORM). 복원하지 못한 달은 통째로 버린다(dropped).
+#   버린 달은 매매·전월세에 영향이 없고(국토부 자료) 인구이동만 화면에 '직전 달 대체'로 표시된다.
+# 2026-07 인천 개편 복원 ---------------------------------------------------------------------
+# KOSIS 는 이 달부터 새 구만 주고 옛 코드는 0으로 준다. 새 구를 우리 옛 체계 묶음으로 되돌린다.
+#   묶음 대표 ← [새 구들], x_ratio
+#   x_ratio = (묶음 안에서 새 구끼리 오간 이동) / (새 구 각각의 내부 이동 합)
+#   in_total(묶음) = Σin  - X,  out_total(묶음) = Σout - X,  intra(묶음) = Σintra + X,  X = Σintra × x_ratio
+# x_ratio 는 MDIS 2023~25(36개월) 행정동 쌍 집계로 구했다. 행정동 → 새 구 대응은 행정안전부
+# '인천 행정구역 변경 상세내역'(2026-07-01)의 행정동 코드로 확인했다.
+#   옛 중구(28110) → 제물포구: 53000 신포·52000 연안·54000 신흥·56000 도원·57000 율목·58500 동인천·61500 개항
+#                  → 영종구  : 나머지 5종(62800·62000·62200·62300·63000). MDIS 실제 코드와 합계가 맞는다.
+#   옛 동구(28140) → 제물포구: 전부(11종)
+#   옛 서구(28260) → 검단구  : 68000 검단·69000 불로대곡·70000 원당·71000 당하·72000 오류왕길·73000 마전
+#                             ·74000 아라(2025-10 에 아라1 75000·아라2 76000 으로 나뉨, 월별 코드 교체로 확인)·75000·76000
+#                  → 서해구  : 51500 검암경서·53000 연희·53600/53700/53900 청라1~3·54200/54300/54400 가정1~3
+#                             ·57500 신현원창·55000/56000/56100 석남1~3·58000/59000/60000/61000 가좌1~4
+#     옛 서구 25종이 두 표로 빠짐없이 갈린다.
+# 검증: KOSIS 개편 직전·직후 한 달 역산(서구 X ≈ 730, 중구+동구 ≈ 101)과 비교하면 MDIS 월평균은
+#   서구 598명, 중구+동구 34명으로 둘 다 작다. 한 달 역산은 월 변동이 섞이고, 검단 신도시 입주로 2026년의
+#   서해↔검단 이동이 2023~25 평균보다 클 수 있다. 36개월 평균인 MDIS 쪽을 쓰고 이 차이를 한계로 둔다.
+#   (74000 을 처음엔 이 역산에 맞춰 서해로 뒀다가 월별 코드 교체로 검단임을 확인했다. 한 달 역산으로 분류하지 말 것.)
+#   행정동 경계와 법정동 경계가 어긋나 일부 법정동만 넘어간 곳(검암경서동의 시천동·오류동)은 표현하지 못한다.
+REFORM_FROM = "2026-07"
+REFORM = {"28110": (["28125", "28155"], 0.045),   # 중구+동구 묶음 ← 제물포구 + 영종구
+          "28260": (["28275", "28290"], 0.286)}   # 서구 ← 서해구 + 검단구
+REFORM_ABSORBED = {"28140": "28110"}              # 묶음 대표에 흡수되는 우리 코드 (estimate_od 가 달별 묶음으로 쓴다)
 MARGIN_COLS = ["ym", "code", "in_total", "out_total", "intra"]
 
 
@@ -92,9 +115,9 @@ def margins(api_key, start, end, codes, getter=http_get, chunk=6):
     codes: 우리 77개 시군구 코드. 결과는 KOSIS 코드(일반구는 시 코드 SI_OF_GU)로 준다.
     반환: (rows, missing, dropped)
       missing  응답에 없는 우리 코드
-      dropped  폐지된 코드가 0으로 온 달. 그 달은 rows 에서 통째로 뺀다(0을 쓰면 IPF 가 그 지역 이동을 0으로 맞춘다).
-               인천 2026-07 개편이 그렇다. 위 '2026-07 이후를 쓰려면' 주석 참고."""
-    wanted = {SI_OF_GU.get(c, c) for c in codes}
+      dropped  폐지된 코드가 0으로 온 달 중 복원하지 못한 달. 그 달은 rows 에서 통째로 뺀다
+               (0을 그대로 쓰면 IPF 가 그 지역 이동을 0으로 맞춘다)."""
+    wanted = {SI_OF_GU.get(c, c) for c in codes} | {n for ns, _ in REFORM.values() for n in ns}
     ms = _months(start, end)
     seen = {}  # (ym, 원래 코드, 항목) → 값. 겹친 응답이 와도 두 번 더하지 않도록 덮어쓴다.
     for k in range(0, len(ms), chunk):
@@ -114,6 +137,18 @@ def margins(api_key, start, end, codes, getter=http_get, chunk=6):
     acc = {}
     for (ym, raw, field), v in seen.items():
         acc.setdefault((ym, raw), {"in_total": 0, "out_total": 0, "intra": 0})[field] = v
+    for ym in sorted({k[0] for k in acc if k[0] >= REFORM_FROM}):
+        for old_code, (news, ratio) in REFORM.items():
+            vals = [acc.pop((ym, n)) for n in news if (ym, n) in acc]
+            if not vals:
+                continue
+            tot = {f: sum(v[f] for v in vals) for f in ITEMS.values()}
+            x = round(tot["intra"] * ratio)
+            acc[(ym, old_code)] = {"in_total": tot["in_total"] - x, "out_total": tot["out_total"] - x,
+                                   "intra": tot["intra"] + x}
+            for absorbed, rep in REFORM_ABSORBED.items():
+                if rep == old_code:
+                    acc.pop((ym, absorbed), None)   # 묶음 대표에 들어갔다
     dead = sorted({k[0] for k, v in acc.items() if v["in_total"] == v["out_total"] == 0})
     if dead:
         acc = {k: v for k, v in acc.items() if k[0] not in dead}

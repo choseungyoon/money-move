@@ -19,7 +19,7 @@ import csv, os, sys
 from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(__file__))
-from sources.kosis import SI_OF_GU  # noqa: E402
+from sources.kosis import SI_OF_GU, REFORM_FROM, REFORM_ABSORBED  # noqa: E402
 
 ROOT = os.path.join(os.path.dirname(__file__), "..")
 INTERIM = os.path.join(ROOT, "data", "interim")
@@ -43,16 +43,34 @@ def base_pattern(od_rows, months):
     return allm, hous
 
 
+def grouping(ym):
+    """그 달의 묶음 함수. 경기 일반구는 늘 시로 묶고, 인천 중구·동구는 2026-07 개편 이후 달에만 한 묶음이다
+    (KOSIS 가 제물포구로 합쳐서 주므로 둘을 나눠 제약할 수 없다. kosis.REFORM 참고)."""
+    g = dict(SI_OF_GU)
+    if ym >= REFORM_FROM:
+        g.update(REFORM_ABSORBED)
+    return lambda c: g.get(c, c)
+
+
 def group(c):
     return SI_OF_GU.get(c, c)
 
 
-def ipf(seed, row_target, col_target, iters=ITER):
+def split_cells(allm, n, grp):
+    """기준 패턴을 묶음 사이 칸(seed)과 묶음 안 칸(block)으로 나눈다."""
+    seed, block = {}, defaultdict(dict)
+    for k, v in allm.items():
+        a, b = grp(k[0]), grp(k[1])
+        (seed if a != b else block[a])[k] = v / n
+    return seed, block
+
+
+def ipf(seed, row_target, col_target, iters=ITER, grp=group):
     """seed: {(i,j): v} 서로 다른 묶음 사이 칸. row_target/col_target: 제약이 있는 묶음만. 반환: 조정된 칸."""
     m = {k: v for k, v in seed.items() if v > 0}
     rows, cols = defaultdict(list), defaultdict(list)
     for (i, j) in m:
-        rows[group(i)].append((i, j)); cols[group(j)].append((i, j))
+        rows[grp(i)].append((i, j)); cols[grp(j)].append((i, j))
     for _ in range(iters):
         for i, t in row_target.items():
             s = sum(m[k] for k in rows[i])
@@ -76,10 +94,6 @@ def estimate(od_rows, margin_rows, base_months=12):
     last = od_months[-1]
     base = od_months[-base_months:]
     allm, hous = base_pattern(od_rows, base)
-    seed, block = {}, defaultdict(dict)  # 묶음 사이 칸, 묶음 안 칸
-    for k, v in allm.items():
-        a, b = group(k[0]), group(k[1])
-        (seed if a != b else block[a])[k] = v / len(base)
     # 시군구별 평균 주택 사유 비율(칸 비율이 없을 때 대체)
     dst_all, dst_h = defaultdict(float), defaultdict(float)
     for k, v in allm.items():
@@ -93,11 +107,14 @@ def estimate(od_rows, margin_rows, base_months=12):
         mg = by_month[ym]
         rt = {c: max(0.0, float(r["out_total"]) - float(r["intra"])) for c, r in mg.items()}
         ct = {c: max(0.0, float(r["in_total"]) - float(r["intra"])) for c, r in mg.items()}
-        est = ipf(seed, rt, ct)
+        grp = grouping(ym)
+        seed, block = split_cells(allm, len(base), grp)   # 묶음이 달마다 다를 수 있다(인천 개편)
+        est = ipf(seed, rt, ct, grp=grp)
+        groups = set(SI_OF_GU.values()) | (set(REFORM_ABSORBED.values()) if ym >= REFORM_FROM else set())
         for c, r in mg.items():
             cells = block.get(c)
             if not cells or not sum(cells.values()):
-                if c in SI_OF_GU.values():
+                if c in groups:
                     raise ValueError(f"{ym} {c}: 기준 기간 MDIS에 이 시의 구 안 이동이 없어 시군구 내 이동을 구별로 나눌 수 없습니다.")
                 cells = {(c, c): 1.0}
             s = sum(cells.values())

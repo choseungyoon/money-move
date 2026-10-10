@@ -98,20 +98,70 @@ class KosisMarginsTest(unittest.TestCase):
         _, missing, _ = kosis.margins("K", "2026-01", "2026-01", ["41285"], getter=getter)
         self.assertEqual(missing, ["41285"])                                  # 고양시(41280)가 응답에 없으면 우리 코드로 알린다
 
-    def test_abolished_codes_zero_drops_that_month_only(self):
-        """2026-07 인천 개편 뒤 KOSIS는 28110·28140·28260을 빠뜨리지 않고 0으로 준다.
-        0을 그대로 쓰면 IPF가 그 지역 이동을 0으로 맞춘다. 그 달만 버리고 개편 전 달은 그대로 쓴다.
-        (에러로 막으면 국토부 자료가 멀쩡한 매매·전월세까지 그 달을 못 쓴다.)"""
+    def test_reform_new_gu_restored_to_old_groups(self):
+        """2026-07 인천 개편: 옛 코드는 0으로, 새 구는 값으로 온다. 새 구를 옛 체계 묶음으로 되돌린다.
+        묶음 안에서 새 구끼리 오간 이동 X = Σintra × x_ratio 를 전입·전출에서 빼고 시군구 내에 더한다."""
         def getter(url):
             rows = [{"ITM_ID": i, "C1": c, "PRD_DE": p, "DT": dt} for p, c, i, dt in
                     (("202606", "28260", "T10", "8716"), ("202606", "28260", "T20", "6520"), ("202606", "28260", "T30", "3044"),
+                     ("202607", "28110", "T10", "0"), ("202607", "28110", "T20", "0"), ("202607", "28110", "T30", "0"),
+                     ("202607", "28140", "T10", "0"), ("202607", "28140", "T20", "0"), ("202607", "28140", "T30", "0"),
                      ("202607", "28260", "T10", "0"), ("202607", "28260", "T20", "0"), ("202607", "28260", "T30", "0"),
-                     ("202607", "28290", "T10", "5186"))]
+                     ("202607", "28125", "T10", "862"), ("202607", "28125", "T20", "852"), ("202607", "28125", "T30", "191"),
+                     ("202607", "28155", "T10", "1816"), ("202607", "28155", "T20", "1411"), ("202607", "28155", "T30", "470"),
+                     ("202607", "28275", "T10", "3942"), ("202607", "28275", "T20", "3711"), ("202607", "28275", "T30", "1169"),
+                     ("202607", "28290", "T10", "5186"), ("202607", "28290", "T20", "2665"), ("202607", "28290", "T30", "1145"))]
             return json.dumps(rows).encode()
-        rows, missing, dropped = kosis.margins("K", "2026-06", "2026-07", ["28260"], getter=getter)
+        rows, missing, dropped = kosis.margins("K", "2026-06", "2026-07", ["28110", "28140", "28260"], getter=getter)
+        got = {(r[0], r[1]): r[2:] for r in rows}
+        self.assertEqual(dropped, [])
+        self.assertEqual(got[("2026-06", "28260")], [8716, 6520, 3044])           # 개편 전 달은 그대로
+        x1 = round((191 + 470) * kosis.REFORM["28110"][1])
+        self.assertEqual(got[("2026-07", "28110")], [862 + 1816 - x1, 852 + 1411 - x1, 191 + 470 + x1])
+        x2 = round((1169 + 1145) * kosis.REFORM["28260"][1])
+        self.assertEqual(got[("2026-07", "28260")], [3942 + 5186 - x2, 3711 + 2665 - x2, 1169 + 1145 + x2])
+        self.assertNotIn(("2026-07", "28140"), got)                               # 동구는 중구 묶음에 들어갔다
+        self.assertFalse({c for _, c in got} & {"28125", "28155", "28275", "28290"})  # 새 구 코드는 남지 않는다
+
+    def test_abolished_code_without_successor_drops_month(self):
+        """복원할 새 구가 응답에 없는데 옛 코드가 0이면 그 달을 버린다(0을 쓰면 IPF 가 0으로 맞춘다)."""
+        def getter(url):
+            rows = [{"ITM_ID": i, "C1": "28260", "PRD_DE": p, "DT": dt} for p, i, dt in
+                    (("202606", "T10", "8716"), ("202606", "T20", "6520"), ("202606", "T30", "3044"),
+                     ("202607", "T10", "0"), ("202607", "T20", "0"), ("202607", "T30", "0"))]
+            return json.dumps(rows).encode()
+        rows, _, dropped = kosis.margins("K", "2026-06", "2026-07", ["28260"], getter=getter)
         self.assertEqual(dropped, ["2026-07"])
-        self.assertEqual(rows, [["2026-06", "28260", 8716, 6520, 3044]])   # 개편 전 달은 살아 있다
-        self.assertEqual(missing, [])
+        self.assertEqual(rows, [["2026-06", "28260", 8716, 6520, 3044]])
+
+class ReformGroupTest(unittest.TestCase):
+    """2026-07 인천 개편 이후 달에는 중구(28110)·동구(28140)를 한 묶음으로 제약한다(KOSIS 가 제물포구로 합쳐 준다)."""
+    JUNG, DONG, OUT = "28110", "28140", "11680"
+
+    def test_jung_dong_constrained_together_only_after_reform(self):
+        J, Dg, O = self.JUNG, self.DONG, self.OUT
+        base = {(J, J): (50, 50), (Dg, Dg): (10, 10), (J, Dg): (5, 5), (Dg, J): (5, 5),
+                (O, J): (20, 20), (O, Dg): (10, 10), (J, O): (15, 15), (Dg, O): (15, 15)}
+        # 개편 전 달: 따로 온다 / 개편 후 달: 중구 묶음 하나로 온다(동구는 없다)
+        margins = [
+            {"ym": "2026-06", "code": J, "in_total": "80", "out_total": "75", "intra": "50"},
+            {"ym": "2026-06", "code": Dg, "in_total": "25", "out_total": "30", "intra": "10"},
+            {"ym": "2026-07", "code": J, "in_total": "100", "out_total": "100", "intra": "70"},
+        ]
+        rows, _, months = eo.estimate(od("2025-12", base), margins)
+        self.assertEqual(months, ["2026-06", "2026-07"])
+        got = {(r[0], r[1], r[2]): r[4] for r in rows}
+        # 개편 전: 시군구 내는 각각 KOSIS 값
+        self.assertEqual(got[("2026-06", J, J)], 50)
+        self.assertEqual(got[("2026-06", Dg, Dg)], 10)
+        # 개편 후: 묶음 안 칸(중구 내·동구 내·중구↔동구) 합이 묶음 시군구 내(70)이고, MDIS 비율(50:10:5:5)로 나뉜다
+        inner = sum(v for (ym, a, b), v in got.items() if ym == "2026-07" and a in (J, Dg) and b in (J, Dg))
+        self.assertAlmostEqual(inner, 70, delta=1)
+        self.assertAlmostEqual(got[("2026-07", J, J)], 70 * 50 / 70, delta=1)
+        self.assertIn(("2026-07", J, Dg), got)       # 중구↔동구는 묶음 안 칸으로 남는다
+        # 묶음에서 밖으로 나간 양 = out_total - intra = 30
+        out = sum(v for (ym, a, b), v in got.items() if ym == "2026-07" and a in (J, Dg) and b not in (J, Dg))
+        self.assertAlmostEqual(out, 30, delta=1)
 
 
 if __name__ == "__main__":
