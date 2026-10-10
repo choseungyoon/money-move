@@ -20,8 +20,9 @@
   - 다시 받을 때마다 이전 응답과 비교한 변경 건수를 molit_changes.csv 에 남긴다(cancel_lag.py가 분석).
   - 출력 CSV는 (ym, code) 묶음 단위로 교체한다. 다시 받은 묶음의 기존 행은 모두 지우고 새로 쓴다.
     행 단위로 덮어쓰면, 다시 받았을 때 사라진 단지(계약 해제 등)의 옛 행이 남아 순위에 계속 나온다.
-  - 단지 식별: 응답에 aptSeq(단지 일련번호)가 있으면 쓰고, 없으면 시군구+법정동+지번+단지명 조합.
-    단지명만으로는 고유하지 않다(다른 동의 동명 단지, 띄어쓰기·명칭 변경).
+  - 단지 식별: 시군구+법정동+지번+단지명(띄어쓰기 무시) 조합. 단지명만으로는 고유하지 않다(다른 동의 동명 단지).
+    aptSeq(단지 일련번호)는 전월세 응답에만 있고 매매 응답에는 없다(2026-10 molit-probe 확인).
+    aptSeq를 쓰면 같은 단지가 매매·전월세에서 서로 다른 단지가 되므로 두 API 모두 조합 키를 쓴다.
 """
 import csv, os, sys, time, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
@@ -221,8 +222,6 @@ def num(s):
 
 
 def complex_id(code, it):
-    if it.get("aptSeq"):
-        return it["aptSeq"]
     name = "".join((it.get("aptNm") or "").split())
     return f"{code}|{it.get('umdNm', '')}|{it.get('jibun', '')}|{name}"
 

@@ -16,8 +16,11 @@ def read(path):
 
 
 class ComplexTest(unittest.TestCase):
-    def test_complex_id_prefers_aptseq_else_composite(self):
-        self.assertEqual(molit.complex_id("11680", {"aptSeq": "11680-123", "aptNm": "A"}), "11680-123")
+    def test_complex_id_same_for_trade_and_rent(self):
+        # 전월세 응답에만 aptSeq가 있다. 같은 단지가 매매·전월세에서 같은 ID여야 한다
+        rent = {"aptSeq": "11680-123", "umdNm": "대치동", "jibun": "1", "aptNm": "래미안 대치"}
+        trade = {"umdNm": "대치동", "jibun": "1", "aptNm": "래미안 대치"}
+        self.assertEqual(molit.complex_id("11680", rent), molit.complex_id("11680", trade))
         a = molit.complex_id("11680", {"umdNm": "대치동", "jibun": "1", "aptNm": "래미안 대치"})
         b = molit.complex_id("11680", {"umdNm": "대치동", "jibun": "1", "aptNm": "래미안대치"})
         c = molit.complex_id("11680", {"umdNm": "도곡동", "jibun": "1", "aptNm": "래미안대치"})
