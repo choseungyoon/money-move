@@ -1,4 +1,5 @@
 """새 자료 공개 확인."""
+import pathlib, tempfile
 import json, os, sys, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
@@ -84,6 +85,52 @@ class NotifyTest(unittest.TestCase):
         self.assertEqual([c[:2] for c in calls[:2]], [("POST", "/repos/o/r/issues")] * 2)
         self.assertIn("#7", calls[2][2]["body"])   # 옛 알림 닫는 댓글이 MDIS 알림을 가리킨다
         self.assertEqual(calls[3], ("PATCH", "/repos/o/r/issues/1", {"state": "closed", "state_reason": "not_planned"}))
+
+class InterimModeTest(unittest.TestCase):
+    """demo 와 real 이 data/interim 을 공유해 조용히 섞이는 것을 막는다."""
+    def test_mode_switch_clears_csvs_and_keeps_others(self):
+        import run
+        with tempfile.TemporaryDirectory() as d:
+            for n in ("migration_od_month.csv", "card_month.csv"):
+                pathlib.Path(os.path.join(d, n)).write_text("x", encoding="utf-8")
+            pathlib.Path(os.path.join(d, "mdis_run.log")).write_text("keep", encoding="utf-8")
+            run.interim_mode(d, "demo")
+            self.assertTrue(os.path.exists(os.path.join(d, "migration_od_month.csv")))  # 첫 호출은 비우지 않는다
+            run.interim_mode(d, "demo")
+            self.assertTrue(os.path.exists(os.path.join(d, "card_month.csv")))           # 같은 모드면 유지
+            run.interim_mode(d, "real")
+            self.assertFalse(os.path.exists(os.path.join(d, "migration_od_month.csv")))  # 모드가 바뀌면 비운다
+            self.assertFalse(os.path.exists(os.path.join(d, "card_month.csv")))
+            self.assertTrue(os.path.exists(os.path.join(d, "mdis_run.log")))             # csv 아닌 건 남긴다
+            self.assertEqual(pathlib.Path(os.path.join(d, ".mode")).read_text(encoding="utf-8"), "real")
+
+class KosisRetryTest(unittest.TestCase):
+    """KOSIS 는 6개월씩 나눠 여러 번 호출한다. 한 번 끊겼다고 전체가 날아가면 안 된다."""
+    def test_retries_then_succeeds(self):
+        calls = []
+
+        class R:
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return b"ok"
+
+        def flaky(url, timeout=None):
+            calls.append(url)
+            if len(calls) < 3:
+                raise ConnectionResetError(54, "Connection reset by peer")
+            return R()
+
+        orig_open, orig_sleep = kosis.urllib.request.urlopen, kosis.time.sleep
+        kosis.urllib.request.urlopen, kosis.time.sleep = flaky, lambda s: None
+        try:
+            self.assertEqual(kosis.http_get("https://example.test/x"), b"ok")
+            self.assertEqual(len(calls), 3)
+            kosis.urllib.request.urlopen = lambda url, timeout=None: (_ for _ in ()).throw(ConnectionResetError(54, "x"))
+            with self.assertRaises(ConnectionResetError):   # 끝까지 실패하면 숨기지 않고 올린다
+                kosis.http_get("https://example.test/y")
+        finally:
+            kosis.urllib.request.urlopen, kosis.time.sleep = orig_open, orig_sleep
+
 
 
 if __name__ == "__main__":

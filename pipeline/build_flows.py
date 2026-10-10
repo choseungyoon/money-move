@@ -3,6 +3,7 @@
 레이어
   trade : 매매 자금. 출발지 = 매수자 거주지(추정), 도착지 = 매물 소재지.
           F_ij = N_j × share_bucket(i) × w_ij / Σ_bucket w,  w_ij = 최근 12개월 이주 OD(i→j) + 평활항
+          share_bucket 은 최근 12개월 평균이다(smooth_share). R-ONE 이 등기 기준이라 신축 입주 달에 튄다.
           금액 = F_ij × 평균거래가_j
   rent  : 전월세 보증금. 신규 계약만 쓰고, 출발지는 이주 OD 비율로 배분.
   equity: 매매 자금 중 추정 자기자본분 (leverage.py 가정). 흐름 배분은 trade와 같다.
@@ -58,8 +59,8 @@ def load_tables(interim):
     rent = {(r["ym"], r["code"]): dict(contracts=int(r["contracts"]), new=int(r["new_contracts"]),
                                        deposit=float(r["deposit_eok"]))
             for r in read_csv(os.path.join(interim, "rent_region_month.csv"))}
-    share = {(r["ym"], r["code"]): {b: float(r[b]) for b in BUCKETS}
-             for r in read_csv(os.path.join(interim, "buyer_origin_share.csv"))}
+    share = smooth_share({(r["ym"], r["code"]): {b: float(r[b]) for b in BUCKETS}
+                          for r in read_csv(os.path.join(interim, "buyer_origin_share.csv"))})
     od = defaultdict(dict)
     for r in read_csv(os.path.join(interim, "migration_od_month.csv")):
         od[r["ym"]][(r["src"], r["dst"])] = int(r["persons"])
@@ -73,6 +74,22 @@ def load_tables(interim):
             estimated.add(r["ym"])
             od[r["ym"]][(r["src"], r["dst"])] = int(r["persons"])
     return dict(trade=trade, rent=rent, share=share, od=dict(od), od_estimated=sorted(estimated))
+
+
+def smooth_share(share, size=12):
+    """매입자거주지 비중을 그 달 이하 최근 size개월 단순평균으로 바꾼다.
+
+    R-ONE 은 소유권이전등기 기준으로 보인다(국토부 실거래와 교차검증: 전체 총량비 0.54,
+    신축 입주가 몰린 달에 폭증. 과천 2025-12 R-ONE 532건 / 국토부 매매 8건. 분양권 전매도, 시차도 아니다).
+    그런 달의 비중은 매매가 아니라 분양 당첨자의 거주지 분포라 월별 값을 그대로 쓰면 그 달만 크게 튄다
+    (과천 2025-12 서울 비중 0.17 → 0.46). 인구이동 OD 도 12개월 창(od_window)을 쓰므로 창 크기를 맞춘다.
+    건수로 가중하지 않는다. 가중하면 거래가 폭증한 입주 달이 오히려 평균을 지배한다."""
+    months = sorted({ym for ym, _ in share})
+    out = {}
+    for (ym, code) in share:
+        got = [share[(m, code)] for m in months if m <= ym and (m, code) in share][-size:]
+        out[(ym, code)] = {b: sum(g[b] for g in got) / len(got) for b in BUCKETS}
+    return out
 
 
 def od_window(od_months, ym, size=12):

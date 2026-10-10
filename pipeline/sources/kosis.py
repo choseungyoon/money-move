@@ -9,15 +9,23 @@
 TABLE 값(통계표 ID, 항목·분류 코드)은 KOSIS 통계표 화면의 'OpenAPI' 버튼에서 확인해 맞춘다.
 실제 키로 확인하지 못한 값이다. 키는 KOSIS 공유서비스에서 무료로 발급(KOSIS_KEY 환경변수).
 """
-import json, urllib.parse, urllib.request
+import json, time, urllib.parse, urllib.request
 
 BASE = "https://kosis.kr/openapi/Param/statisticsParameterData.do"
 TABLE = {"orgId": "101", "tblId": "DT_1B26001_A01", "itmId": "ALL", "objL1": "ALL"}  # 시군구별 이동자수 (확인 필요)
 
 
-def http_get(url):
-    with urllib.request.urlopen(url, timeout=30) as r:
-        return r.read()
+def http_get(url, retries=4):
+    """KOSIS 도 공공 API라 간헐적으로 연결이 끊긴다(ConnectionResetError Errno 54를 겪었다).
+    margins 는 6개월씩 여러 번 호출하는데, 한 번 실패하면 그때까지 받은 것이 전부 날아간다. molit 과 같이 다시 시도한다."""
+    for k in range(retries):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                return r.read()
+        except Exception:
+            if k == retries - 1:
+                raise
+            time.sleep(2 ** (k + 1))
 
 
 def latest_month(api_key, table=TABLE, getter=http_get):

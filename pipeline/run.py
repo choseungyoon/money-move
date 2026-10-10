@@ -52,6 +52,22 @@ def py(script, *args):
 MDIS_AGG = os.path.join(ROOT, "data", "mdis", "migration_od_month.csv.gz")
 
 
+def interim_mode(interim, mode):
+    """data/interim 은 demo 와 real 이 같은 파일 이름을 쓴다. 모드가 바뀌면 중간 테이블을 비운다.
+
+    섞이면 조용히 틀린다: real 빌드가 manifest 해시를 보고 '원천 파일이 그대로'라며 synth.py 가 만든
+    합성 인구이동 OD·소득·카드를 그대로 쓰고, meta.demo 는 false 라서 화면에 경고도 없다.
+    (실제로 한 번 겪었다: 데모 OD 2024-01~2025-12 가 남아 실데이터 44개월 중 14개월이 'OD 없는 달'이 됐다.)"""
+    mark = os.path.join(interim, ".mode")
+    prev = Path(mark).read_text(encoding="utf-8").strip() if os.path.exists(mark) else None
+    if prev and prev != mode:
+        gone = glob.glob(os.path.join(interim, "*.csv"))
+        for f in gone:
+            os.remove(f)
+        print(f"data/interim 이 {prev} 산출물이라 비웠습니다({mode} 와 섞이면 조용히 틀립니다): {len(gone)}개 파일 삭제")
+    Path(mark).write_text(mode, encoding="utf-8")
+
+
 def mdis_raw_files(raw):
     return sorted(glob.glob(os.path.join(raw, "mdis", "*.csv")) + glob.glob(os.path.join(raw, "mdis", "*.txt")))
 
@@ -90,11 +106,14 @@ def main():
         mdis_aggregate(paths, interim)
         return
     if a.mode == "demo":
+        interim = os.path.join(ROOT, "data", "interim"); os.makedirs(interim, exist_ok=True)
+        interim_mode(interim, "demo")
         py("synth.py"); py("estimate_od.py"); py("build_flows.py"); py("build_detail.py")
     else:
         from sources import molit, reb
         key = os.environ.get("MOLIT_KEY") or sys.exit("MOLIT_KEY 환경변수가 필요합니다.")
         interim = os.path.join(ROOT, "data", "interim"); os.makedirs(interim, exist_ok=True)
+        interim_mode(interim, "real")
         raw = os.path.join(ROOT, "data", "raw")
         codes = [r["code"] for r in json.loads(Path(os.path.join(ROOT, "data", "regions_geo.json")).read_text(encoding="utf-8"))["regions"]]
         ms = months(a.start, a.end)

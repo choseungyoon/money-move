@@ -120,5 +120,38 @@ class LeverageTest(unittest.TestCase):
                     self.assertTrue(0 < e <= p, (p, code, ym, e))
 
 
+class SmoothShareTest(unittest.TestCase):
+    """매입자거주지 비중은 최근 12개월 평균으로 쓴다. R-ONE 이 등기 기준이라 신축 입주 달에 튀기 때문."""
+    def share(self, spike_at="2025-12", n=24):
+        out = {}
+        for i in range(1, n + 1):
+            ym = f"2025-{i:02d}" if i <= 12 else f"2026-{i - 12:02d}"
+            out[(ym, "41290")] = ({"same_sgg": .1, "same_sido": .1, "seoul": .8, "other": 0} if ym == spike_at
+                                  else {"same_sgg": .4, "same_sido": .4, "seoul": .2, "other": 0})
+        return out
+
+    def test_spike_diluted_and_window_limited(self):
+        out = bf.smooth_share(self.share())
+        # 입주장 달: 평상시 11개월 0.2 + 그 달 0.8 → 0.25 로 희석된다
+        self.assertAlmostEqual(out[("2025-12", "41290")]["seoul"], (0.2 * 11 + 0.8) / 12, places=9)
+        # 첫 달은 창에 자기 자신뿐이라 그대로
+        self.assertAlmostEqual(out[("2025-01", "41290")]["seoul"], 0.2, places=9)
+        # 창 안에 남아 있는 동안은 계속 반영된다(2026-11 창 = 2025-12~2026-11)
+        self.assertAlmostEqual(out[("2026-11", "41290")]["seoul"], (0.2 * 11 + 0.8) / 12, places=9)
+        # 창에서 빠지면 평상시로 돌아온다(2026-12 창 = 2026-01~2026-12)
+        self.assertAlmostEqual(out[("2026-12", "41290")]["seoul"], 0.2, places=9)
+        # 비중 합은 1을 유지한다
+        for v in out.values():
+            self.assertAlmostEqual(sum(v.values()), 1.0, places=9)
+
+    def test_missing_months_skipped_not_zero_filled(self):
+        """자료가 없는 달은 0으로 채우지 않는다(0을 넣으면 비중이 가라앉는다)."""
+        sh = self.share(n=12)
+        del sh[("2025-05", "41290")]
+        out = bf.smooth_share(sh)
+        self.assertNotIn(("2025-05", "41290"), out)
+        self.assertAlmostEqual(out[("2025-06", "41290")]["seoul"], 0.2, places=9)
+
+
 if __name__ == "__main__":
     unittest.main()
