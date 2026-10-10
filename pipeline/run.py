@@ -16,6 +16,7 @@
             data/raw/card_incheon.csv      (인천e음 군구별 결제금액)
 """
 import argparse, glob, gzip, hashlib, json, os, shutil, subprocess, sys
+from datetime import date
 from pathlib import Path
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -50,6 +51,8 @@ def py(script, *args):
 
 
 MDIS_AGG = os.path.join(ROOT, "data", "mdis", "migration_od_month.csv.gz")
+# R-ONE 원자료는 수동 다운로드다. 비중만 담은 집계를 커밋해 GitHub Actions 가 원자료 없이 돌게 한다(MDIS 와 같은 방식).
+REB_AGG = os.path.join(ROOT, "data", "reb", "buyer_origin_share.csv")
 
 
 def interim_mode(interim, mode):
@@ -94,7 +97,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("mode", choices=["demo", "real", "mdis"])
     ap.add_argument("--from", dest="start", default="2024-01")
-    ap.add_argument("--to", dest="end", default="2026-08")
+    # 상한을 손으로 주면 그 달까지만 쌓인다(2026-08 로 두는 바람에 9월 실거래가 있는데도 화면에 없었다).
+    # 국토부는 계약월 기준이라 당월도 일부 들어온다(신고기한 30일이라 적다 → 화면에 '잠정' 표시).
+    ap.add_argument("--to", dest="end", default=date.today().strftime("%Y-%m"))
     ap.add_argument("--refresh-all", action="store_true", help="캐시를 무시하고 요청 기간 전체를 다시 받는다")
     a = ap.parse_args()
     load_dotenv()
@@ -144,7 +149,8 @@ def main():
         # R-ONE 에서 받은 파일은 이름이 길고 한글이라 그대로 두어도 된다: data/raw/r-one/*.csv 도 찾는다
         cands = [os.path.join(raw, "reb_buyer_residence.csv")] + sorted(glob.glob(os.path.join(raw, "r-one", "*.csv")))
         src, dst = next((p for p in cands if os.path.exists(p)), cands[0]), os.path.join(interim, "buyer_origin_share.csv")
-        if os.path.exists(src) and (changed(src) or not os.path.exists(dst)):
+        # REB_AGG(커밋 대상)가 없으면 원천 파일이 그대로여도 다시 만든다
+        if os.path.exists(src) and (changed(src) or not os.path.exists(dst) or not os.path.exists(REB_AGG)):
             info = reb.load(src, dst)
             msg = f"부동산원 매입자거주지: {info['rows']:,}행 ({info['months'][0]}~{info['months'][-1]})"
             if info["empty"]:
@@ -152,8 +158,13 @@ def main():
             if info["gaps"]:
                 msg += f", 자료 없는 달 {{{', '.join(f'{c}: {len(m)}개월' for c, m in sorted(info['gaps'].items()))}}}"
             print(msg)
+            os.makedirs(os.path.dirname(REB_AGG), exist_ok=True)
+            shutil.copyfile(dst, REB_AGG)   # 커밋 대상
         elif os.path.exists(src):
             print("부동산원 매입자거주지: 원천 파일이 그대로라 기존 buyer_origin_share.csv를 사용합니다.")
+        elif os.path.exists(REB_AGG):
+            shutil.copyfile(REB_AGG, dst)
+            print(f"부동산원 매입자거주지: 커밋된 집계 {os.path.relpath(REB_AGG, ROOT)} 를 사용합니다.")
         elif not os.path.exists(dst):
             sys.exit(f"부동산원 매입자거주지 자료가 없습니다. R-ONE「(월) 매입자거주지별 아파트거래현황」을 "
                      f"{os.path.relpath(cands[0], ROOT)} 또는 data/raw/r-one/ 에 두세요.")
@@ -192,11 +203,15 @@ def main():
         kkey = os.environ.get("KOSIS_KEY")
         if kkey:
             latest = kosis.latest_month(kkey)
-            rows, missing = kosis.margins(kkey, ms[0], min(latest, ms[-1]), codes)
+            rows, missing, dropped = kosis.margins(kkey, ms[0], min(latest, ms[-1]), codes)
             with open(os.path.join(interim, "kosis_sgg_month.csv"), "w", newline="", encoding="utf-8") as f:
                 import csv as _csv
                 w = _csv.writer(f); w.writerow(kosis.MARGIN_COLS); w.writerows(rows)
             print(f"KOSIS 월별 총계 {len(rows)}행 (최신 {latest})" + (f", 응답에 없는 시군구 {missing}" if missing else ""))
+            if dropped:
+                print(f"KOSIS 에서 버린 달 {dropped}: 폐지된 시군구 코드가 0으로 옵니다(2026-07 인천 개편). "
+                      "이 달들은 인구이동을 추정하지 않고 화면에 '직전 달 대체'로 표시됩니다. "
+                      "매매·전월세는 국토부 자료라 영향이 없습니다.")
         else:
             print("KOSIS_KEY 가 없어 MDIS 이후 달의 인구이동은 추정하지 않습니다.")
         py("estimate_od.py")

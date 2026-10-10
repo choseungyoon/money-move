@@ -61,6 +61,7 @@ def load_tables(interim):
             for r in read_csv(os.path.join(interim, "rent_region_month.csv"))}
     share = smooth_share({(r["ym"], r["code"]): {b: float(r[b]) for b in BUCKETS}
                           for r in read_csv(os.path.join(interim, "buyer_origin_share.csv"))})
+    share_latest = max((ym for ym, _ in share), default=None)
     od = defaultdict(dict)
     for r in read_csv(os.path.join(interim, "migration_od_month.csv")):
         od[r["ym"]][(r["src"], r["dst"])] = int(r["persons"])
@@ -73,14 +74,16 @@ def load_tables(interim):
                 continue
             estimated.add(r["ym"])
             od[r["ym"]][(r["src"], r["dst"])] = int(r["persons"])
-    return dict(trade=trade, rent=rent, share=share, od=dict(od), od_estimated=sorted(estimated))
+    return dict(trade=trade, rent=rent, share=share, share_latest=share_latest,
+                od=dict(od), od_estimated=sorted(estimated))
 
 
 def smooth_share(share, size=12):
     """매입자거주지 비중을 그 달 이하 최근 size개월 단순평균으로 바꾼다.
 
-    R-ONE 은 소유권이전등기 기준으로 보인다(국토부 실거래와 교차검증: 전체 총량비 0.54,
-    신축 입주가 몰린 달에 폭증. 과천 2025-12 R-ONE 532건 / 국토부 매매 8건. 분양권 전매도, 시차도 아니다).
+    R-ONE 은 소유권이전등기 신청 기준이다(확인함). 그래서 분양 아파트의 최초 등기가 함께 잡히고
+    국토부 '아파트 매매' 신고와 모집단이 다르다(교차검증: 전체 총량비 0.54, 신축 입주가 몰린 달에 폭증.
+    과천 2025-12 R-ONE 532건 / 국토부 매매 8건. 분양권 전매도, 시차도 아니다).
     그런 달의 비중은 매매가 아니라 분양 당첨자의 거주지 분포라 월별 값을 그대로 쓰면 그 달만 크게 튄다
     (과천 2025-12 서울 비중 0.17 → 0.46). 인구이동 OD 도 12개월 창(od_window)을 쓰므로 창 크기를 맞춘다.
     건수로 가중하지 않는다. 가중하면 거래가 폭증한 입주 달이 오히려 평균을 지배한다."""
@@ -123,6 +126,8 @@ def estimate(tables, ym, cap_codes, window):
     mats = {k: defaultdict(lambda: [0.0, 0.0]) for k in LAYER_KEYS}
     for j in cap_codes:
         t, sh = tables["trade"].get((ym, j)), tables["share"].get((ym, j))
+        if sh is None and tables.get("share_latest") and ym > tables["share_latest"]:
+            sh = tables["share"].get((tables["share_latest"], j))   # 매입자거주지가 아직 안 나온 달: 최신 달로 대체(meta.share_src)
         if t and t["n"] and sh:
             avg, avg_eq = t["value"] / t["n"], t["equity"] / t["n"]
             # 후보 출발지가 없는 버킷(예: 지역 일부만 돌릴 때)의 비중은 버리지 않고 나머지에 재배분한다.
@@ -220,6 +225,9 @@ def build(tables, nodes, demo):
         "meta": {"demo": demo, "months": months, "provisional": months[-2:] if not demo else [],
                  "events": EVENTS, "od_window": windows,
                  "od_missing": [m for m in months if m not in tables["od"]],
+                 # 매입자거주지(R-ONE)가 아직 안 나온 달 → 대신 쓴 최신 공개월. 수동 다운로드라 실거래보다 늦을 수 있다.
+                 "share_src": {m: tables["share_latest"] for m in months
+                               if tables.get("share_latest") and m > tables["share_latest"]},
                  "od_estimated": [m for m in tables.get("od_estimated", []) if m in months],
                  # 인구이동이 아직 공개 전인 달 → 화면에 대신 보여줄 '그 달 이전 최신 공개월'.
                  # 데이터를 복사하지 않고 대응만 기록한다. 새 달이 공개되어 다시 빌드하면 대응이 사라진다.
@@ -243,13 +251,17 @@ def main(demo):
         est = set(data["meta"]["od_estimated"])
         actual = [m for m in od if m not in est]
         with open(os.path.join(ROOT, "data", "coverage.json"), "w", encoding="utf-8") as f:
+            sh = data["meta"]["share_src"]
             json.dump({"od_latest": max(actual) if actual else None,              # MDIS 실제 OD 마지막 달
                        "od_estimated_until": max(od) if od else None,             # 추정 포함 마지막 달
                        "trade_latest": data["meta"]["months"][-1],
+                       # 매입자거주지(R-ONE) 마지막 달. 실거래보다 뒤처지면 check_updates 가 수동 갱신 이슈를 연다
+                       "reb_latest": min(sh.values()) if sh else data["meta"]["months"][-1],
                        "built_at": __import__("time").strftime("%Y-%m-%d")}, f, ensure_ascii=False, indent=1)
     m = data["meta"]
     print(f"wrote {dst}: {os.path.getsize(dst) / 1e6:.2f} MB, {len(m['months'])} months"
-          + (f", OD 없는 달 {len(m['od_missing'])}개 (최근 가용 OD로 대체)" if m["od_missing"] else ""))
+          + (f", OD 없는 달 {len(m['od_missing'])}개 (최근 가용 OD로 대체)" if m["od_missing"] else "")
+          + (f", 매입자거주지 없는 달 {len(m['share_src'])}개 ({min(m['share_src'].values())} 자료로 대체)" if m["share_src"] else ""))
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ API = "https://api.github.com"
 KINDS = {
     "rebuild": re.compile(r"^데이터 갱신 필요: 인구이동 (\d{4}-\d{2}) 공개$"),
     "mdis": re.compile(r"^MDIS (\d{4})년 인구이동 연간자료 반영 필요$"),
+    "reb": re.compile(r"^R-ONE 매입자거주지 (\d{4}-\d{2}) 반영 필요$"),
 }
 LEGACY = re.compile(r"^인구이동 (\d{4}-\d{2}) 자료 공개됨$")
 LEGACY_NOTE = ("이 안내는 틀린 전제로 만들어졌습니다. MDIS의 시군구 간 이동 자료는 월별이 아니라 연 단위(현재 2025년까지)라 "
@@ -24,7 +25,9 @@ def resolved(kind, key, res):
     have = (res or {}).get(kind)
     if not have:
         return False
-    return have >= key if kind == "rebuild" else have >= f"{key}-12"
+    if kind == "mdis":
+        return have >= f"{key}-12"
+    return have >= key   # rebuild: 추정 포함 마지막 달, reb: 매입자거주지 마지막 달
 
 
 def plan(open_issues, status):

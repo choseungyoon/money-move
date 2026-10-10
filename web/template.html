@@ -159,6 +159,8 @@ button { touch-action: manipulation; }
 .tl-head b { color: var(--fg); font-weight: 500; }
 #spark { width: 100%; height: 100px; display: block; }
 #spark .bar-m { cursor: pointer; }
+.tl-pick { display: inline-flex; align-items: center; gap: 8px; }
+#ympick { font: inherit; font-family: var(--font-num); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-s); padding: 2px 6px; cursor: pointer; }
 #month { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 6px 0; background: var(--line); border-radius: 2px; cursor: pointer; }
 #month::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--flap-ink); border: 2px solid var(--ink); }
 #month::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--flap-ink); border: 2px solid var(--ink); }
@@ -342,7 +344,7 @@ button { touch-action: manipulation; }
   <section class="timeline" aria-label="월 선택">
     <button class="play" id="play" aria-label="재생">▶</button>
     <div class="tl-main">
-      <div class="tl-head"><span id="tl-title"></span><span id="tl-month"></span></div>
+      <div class="tl-head"><span id="tl-title"></span><span class="tl-pick"><select id="ympick" aria-label="년·월 선택"></select><span id="tl-month"></span></span></div>
       <svg id="spark" role="img" aria-label="월별 시군구 간 흐름 규모"></svg>
       <input type="range" id="month" min="0" max="0" step="1" aria-label="월">
     </div>
@@ -413,7 +415,7 @@ LTV: 규제지역 50% (10·15 이후 40%), 비규제 70%
         <li>실거래 신고기한이 계약 후 30일이라 최근 1~2개월은 과소 집계됩니다. 실데이터 모드에서는 해당 월에 '잠정' 표시가 붙습니다.</li>
         <li>'지방'은 비수도권 전체를 묶은 노드라 개별 시군보다 크게 보입니다. 필요하면 끄고 보세요.</li>
         <li>법인 매수는 실거래의 매수자 구분으로 집계해 지역 정보에 표시합니다. 흐름 배분에는 개인과 같은 방식을 씁니다. 외국인은 구분하지 않았습니다.</li>
-        <li>매입자거주지 비중은 한국부동산원 자료인데, 국토부 실거래와 대조해 보면 거래 건수가 1.8배 많고 신축 입주가 몰린 달에 특히 튑니다(소유권이전등기 기준으로 보입니다). 그런 달의 비중은 매매가 아니라 분양 당첨자의 거주지 분포에 가까워서, 월별 값을 그대로 쓰지 않고 최근 12개월 평균을 씁니다. 신축 입주가 많은 지역(검단·동탄·과천 등)에서는 여전히 오차가 남습니다.</li>
+        <li>매입자거주지 비중은 한국부동산원 자료인데, 국토부 실거래와 대조해 보면 거래 건수가 1.8배 많고 신축 입주가 몰린 달에 특히 튑니다. 이 통계가 소유권이전등기 신청 기준이어서 분양 아파트의 최초 등기가 함께 집계되기 때문입니다. 그런 달의 비중은 매매가 아니라 분양 당첨자의 거주지 분포에 가까워서, 월별 값을 그대로 쓰지 않고 최근 12개월 평균을 씁니다. 신축 입주가 많은 지역(검단·동탄·과천 등)에서는 여전히 오차가 남습니다.</li>
         <li>시군구 간 인구이동(어디서 어디로)은 MDIS 마이크로데이터로 연 단위, 1년 넘게 늦게 나옵니다. 그 이후 달은 KOSIS 월별 시군구 전입·전출 총계에 최근 12개월 이동 패턴을 맞춰(IPF) 추정하고 '추정'으로 표시합니다. 데모 채점에서 상위 50개 흐름 오차가 최신월 대체 19%에서 9%로 줄었지만, 실제 이동 구조가 바뀌면 오차가 커집니다.</li>
         <li id="demo-note">지금 화면은 중력모형으로 만든 시연용 데이터입니다. 정책 시점(2025.3 토허제, 10·15 대책)의 효과는 시나리오로 넣은 것이며 실제 통계가 아닙니다. 파이프라인에 API 키를 넣고 실행하면 같은 화면이 실데이터로 바뀝니다.</li>
       </ul>
@@ -829,7 +831,10 @@ const D = /*__DATA__*/null;
     const unit = st.layer === "move" ? "인원: 명" : "금액: 억원 (1조 이상은 조)";
     const win = (D.meta.od_window || {})[months[st.mi]];
     const winEst = win && [...odEst].some((m) => m >= win[0] && m <= win[1]);
-    const odNote = st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}~${ymLabel(win[1])} 인구이동 기준${winEst ? "(일부 추정)" : ""}` : "";
+    const shSrc = (D.meta.share_src || {})[months[st.mi]];
+    const shNote = st.layer !== "move" && st.layer !== "rent" && shSrc
+      ? ` · 매입자거주지는 ${ymLabel(shSrc)} 자료로 대체(R-ONE 공개 전)` : "";
+    const odNote = (st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}~${ymLabel(win[1])} 인구이동 기준${winEst ? "(일부 추정)" : ""}` : "") + shNote;
     $("#board-f").textContent = subbed()
       ? `${unit} · ${ymLabel(months[st.mi])} 통계 공개 전이라 ${srcLabel()} 자료를 표시합니다. 상태는 ${srcLabel()}의 전월 대비`
       : `${unit} · 상태는 같은 노선의 전월 대비${odNote}${isEst() ? (D.meta.demo ? " · 추정치(데모: 실제 KOSIS·MDIS 아님)" : " · 추정치: KOSIS 시군구별 전입·전출 총계에 최근 12개월 MDIS 이동 패턴을 맞춘 값") : ""}`;
@@ -1431,9 +1436,15 @@ const D = /*__DATA__*/null;
     try { localStorage.setItem("mf-layer", l); } catch (e) {}
     drawAll();
   }
-  const range = $("#month");
+  const range = $("#month"), ympick = $("#ympick");
   range.max = months.length - 1;
   range.oninput = () => setMonth(+range.value);
+  months.forEach((m, i) => {
+    const o = document.createElement("option");
+    o.value = i; o.textContent = ymLabel(m);
+    ympick.appendChild(o);
+  });
+  ympick.onchange = () => setMonth(+ympick.value);
   function setMonth(i) { st.mi = Math.max(0, Math.min(months.length - 1, i)); drawAll(); }
   let timer = null;
   $("#play").onclick = () => {
@@ -1460,6 +1471,7 @@ const D = /*__DATA__*/null;
     document.querySelectorAll("#tmode button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === st.layer));
     drawNoData();
     range.value = st.mi;
+    ympick.value = st.mi;
     setClock(months[st.mi]);
     drawMap(); drawKpis(); drawBoard(); drawArrivals(); drawFocus(); drawSpark(); drawLegend(); describeMap();
   }

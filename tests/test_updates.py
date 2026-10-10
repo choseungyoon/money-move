@@ -39,6 +39,18 @@ class CheckTest(unittest.TestCase):
     def test_kosis_failure_makes_no_alerts(self):
         self.assertEqual(check_updates.check(None, None)["alerts"], [])
 
+    def test_reb_alert_when_trade_ahead_of_buyer_residence(self):
+        """R-ONE은 로그인이 필요해 사람이 받아 넣는다. 실거래가 앞서가면 이슈로 알린다."""
+        done = {"od_latest": "2025-12", "od_estimated_until": "2026-08"}
+        s = check_updates.check({**done, "trade_latest": "2026-10", "reb_latest": "2026-08"}, "2026-08")
+        self.assertEqual([(a["kind"], a["key"]) for a in s["alerts"]], [("reb", "2026-10")])
+        self.assertIn("data/raw/r-one/", s["alerts"][0]["body"])
+        self.assertEqual(s["resolved"]["reb"], "2026-08")
+        # 따라잡으면 알림이 없다
+        self.assertEqual(check_updates.check({**done, "trade_latest": "2026-10", "reb_latest": "2026-10"}, "2026-08")["alerts"], [])
+        # 한쪽이 없으면 판단하지 않는다
+        self.assertEqual(check_updates.check({**done, "trade_latest": "2026-10"}, "2026-08")["alerts"], [])
+
 
 class NotifyTest(unittest.TestCase):
     def setUp(self):
@@ -52,6 +64,17 @@ class NotifyTest(unittest.TestCase):
         acts = self.n.plan([{"number": 1, "title": "인구이동 2026-08 자료 공개됨"}], self.status(None))
         self.assertEqual([a[:2] for a in acts], [("close", 1), ("create", "rebuild"), ("create", "mdis")])
         self.assertEqual(acts[0][3], "not_planned")
+
+    def test_reb_issue_closed_when_caught_up(self):
+        import notify_issues as ni
+        opened = [{"number": 9, "title": "R-ONE 매입자거주지 2026-10 반영 필요"}]
+        # 아직 안 따라잡음 → 그대로 둔다
+        acts = ni.plan(opened, {"kosis_ok": True, "alerts": [{"kind": "reb", "key": "2026-10", "title": opened[0]["title"], "body": "b"}],
+                                "resolved": {"reb": "2026-08"}})
+        self.assertEqual(acts, [])
+        # 따라잡음 → 닫는다
+        acts = ni.plan(opened, {"kosis_ok": True, "alerts": [], "resolved": {"reb": "2026-10"}})
+        self.assertEqual([(a[0], a[1], a[3]) for a in acts], [("close", 9, "completed")])
 
     def test_no_duplicates_and_close_when_resolved(self):
         open_ = [{"number": 2, "title": "데이터 갱신 필요: 인구이동 2026-08 공개"}, {"number": 3, "title": "MDIS 2025년 인구이동 연간자료 반영 필요"}]

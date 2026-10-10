@@ -88,26 +88,30 @@ class KosisMarginsTest(unittest.TestCase):
                     (("T10", "11680", "250"), ("T20", "11680", "400"), ("T30", "11680", "220"), ("T25", "11680", "-150"),
                      ("T10", "41130", "15"), ("T10", "41110", "7"), ("T10", "26110", "999"))]
             return json.dumps(rows).encode()
-        rows, missing = kosis.margins("K", "2026-01", "2026-08", ["11680", "41135", "41131", "41111"], getter=getter, chunk=6)
+        rows, missing, dropped = kosis.margins("K", "2026-01", "2026-08", ["11680", "41135", "41131", "41111"], getter=getter, chunk=6)
         self.assertEqual(len(urls), 2)                                        # 8개월 → 6개월씩 2번 (같은 달이 겹쳐 와도 두 배 안 됨)
         self.assertIn(["2026-01", "11680", 250, 400, 220], rows)
         self.assertIn(["2026-01", "41130", 15, 0, 0], rows)                   # 분당·수정 → 성남시 한 줄(두 번 더하지 않음)
         self.assertIn(["2026-01", "41110", 7, 0, 0], rows)                    # 장안 → 수원시
         self.assertEqual(len(rows), 3)                                        # 부산(26110)은 빠진다
-        self.assertEqual(missing, [])
-        _, missing = kosis.margins("K", "2026-01", "2026-01", ["41285"], getter=getter)
+        self.assertEqual((missing, dropped), ([], []))
+        _, missing, _ = kosis.margins("K", "2026-01", "2026-01", ["41285"], getter=getter)
         self.assertEqual(missing, ["41285"])                                  # 고양시(41280)가 응답에 없으면 우리 코드로 알린다
 
-    def test_abolished_codes_reported_as_zero_raise(self):
-        """2026-07 인천 개편 뒤 KOSIS는 28110·28140·28260을 빠뜨리지 않고 0으로 준다. 0을 그대로 쓰면 안 된다."""
+    def test_abolished_codes_zero_drops_that_month_only(self):
+        """2026-07 인천 개편 뒤 KOSIS는 28110·28140·28260을 빠뜨리지 않고 0으로 준다.
+        0을 그대로 쓰면 IPF가 그 지역 이동을 0으로 맞춘다. 그 달만 버리고 개편 전 달은 그대로 쓴다.
+        (에러로 막으면 국토부 자료가 멀쩡한 매매·전월세까지 그 달을 못 쓴다.)"""
         def getter(url):
             rows = [{"ITM_ID": i, "C1": c, "PRD_DE": p, "DT": dt} for p, c, i, dt in
                     (("202606", "28260", "T10", "8716"), ("202606", "28260", "T20", "6520"), ("202606", "28260", "T30", "3044"),
                      ("202607", "28260", "T10", "0"), ("202607", "28260", "T20", "0"), ("202607", "28260", "T30", "0"),
                      ("202607", "28290", "T10", "5186"))]
             return json.dumps(rows).encode()
-        with self.assertRaisesRegex(RuntimeError, "2026-07', '28260"):
-            kosis.margins("K", "2026-06", "2026-07", ["28260"], getter=getter)
+        rows, missing, dropped = kosis.margins("K", "2026-06", "2026-07", ["28260"], getter=getter)
+        self.assertEqual(dropped, ["2026-07"])
+        self.assertEqual(rows, [["2026-06", "28260", 8716, 6520, 3044]])   # 개편 전 달은 살아 있다
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":

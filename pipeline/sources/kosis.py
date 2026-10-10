@@ -71,7 +71,9 @@ SI_OF_GU = {c: c[:4] + "0" for c in ("41111", "41113", "41115", "41117", "41131"
 #   제대로 추정하려면 MDIS 원자료(읍면동 코드가 있다)에서 옛 구 내부 이동을 새 구로 나눠 비율을 구해야 하고,
 #   그러려면 새 구별 법정동 '코드' 목록이 필요하다. molit.py 의 _JUNGGU/_DONGGU 는 제물포구 분할용 '이름'
 #   목록이어서 MDIS(코드)에는 쓸 수 없고, 서해·검단·영종 목록도 아직 없다.
-#   자료가 생기기 전까지는 --to 2026-06 으로 끊어 쓴다.
+#   자료가 생기기 전까지는 그 달을 KOSIS 에서 통째로 버린다(아래 dropped). 매매·전월세는 국토부 자료라
+#   영향이 없고, 그 달의 인구이동만 estimate_od 가 추정하지 않아 화면에 '직전 달 대체'로 표시된다.
+#   KOSIS 실패가 매매 레이어까지 막지 않게 하려는 것이다(에러로 막으면 2026-07·08 실거래가 멀쩡한데도 안 보인다).
 MARGIN_COLS = ["ym", "code", "in_total", "out_total", "intra"]
 
 
@@ -88,7 +90,10 @@ def _months(start, end):
 def margins(api_key, start, end, codes, getter=http_get, chunk=6):
     """start~end('YYYY-MM') 시군구별 총전입·총전출·시군구내 이동. 한 번에 받을 수 있는 양에 한도가 있어 chunk개월씩.
     codes: 우리 77개 시군구 코드. 결과는 KOSIS 코드(일반구는 시 코드 SI_OF_GU)로 준다.
-    응답에 없는 우리 코드는 missing 으로 돌려준다."""
+    반환: (rows, missing, dropped)
+      missing  응답에 없는 우리 코드
+      dropped  폐지된 코드가 0으로 온 달. 그 달은 rows 에서 통째로 뺀다(0을 쓰면 IPF 가 그 지역 이동을 0으로 맞춘다).
+               인천 2026-07 개편이 그렇다. 위 '2026-07 이후를 쓰려면' 주석 참고."""
     wanted = {SI_OF_GU.get(c, c) for c in codes}
     ms = _months(start, end)
     seen = {}  # (ym, 원래 코드, 항목) → 값. 겹친 응답이 와도 두 번 더하지 않도록 덮어쓴다.
@@ -109,14 +114,10 @@ def margins(api_key, start, end, codes, getter=http_get, chunk=6):
     acc = {}
     for (ym, raw, field), v in seen.items():
         acc.setdefault((ym, raw), {"in_total": 0, "out_total": 0, "intra": 0})[field] = v
-    dead = sorted(k for k, v in acc.items() if v["in_total"] == v["out_total"] == 0)
+    dead = sorted({k[0] for k, v in acc.items() if v["in_total"] == v["out_total"] == 0})
     if dead:
-        raise RuntimeError(f"KOSIS 총전입·총전출이 0인 시군구(폐지된 코드): {dead[:6]}{' 외' if len(dead) > 6 else ''}. "
-                           "2026-07 인천 행정구역 개편으로 새 코드(제물포·영종·서해·검단구)로 바뀐 지역입니다. "
-                           "지금은 --to 2026-06 으로 끊어 쓰세요. 2026-07 이후를 쓰려면 새 구를 옛 구 묶음으로 "
-                           "되돌려야 하는데, 묶음 안에서 새 구끼리 오간 이동량을 KOSIS가 주지 않습니다. "
-                           "kosis.py의 '2026-07 이후를 쓰려면' 주석에 복원 공식과 필요한 자료를 적어 뒀습니다.")
+        acc = {k: v for k, v in acc.items() if k[0] not in dead}
     rows = [[ym, c, v["in_total"], v["out_total"], v["intra"]] for (ym, c), v in sorted(acc.items())]
     got = {c for _, c in acc}
     missing = sorted(c for c in codes if SI_OF_GU.get(c, c) not in got)
-    return rows, missing
+    return rows, missing, dead

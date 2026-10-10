@@ -85,7 +85,9 @@ def main():
         from sources import kosis
         run.load_dotenv()
         key = os.environ.get("KOSIS_KEY") or sys.exit("KOSIS_KEY가 없습니다(.env). --kosis 로 파일을 줄 수도 있습니다.")
-        rows, missing = kosis.margins(key, months[0], months[-1], list(names))
+        rows, missing, dropped = kosis.margins(key, months[0], months[-1], list(names))
+        if dropped:
+            print(f"KOSIS 에서 버린 달(폐지 코드가 0): {dropped}")
         kosis_rows = [dict(zip(kosis.MARGIN_COLS, r)) for r in rows]
         if missing:
             print(f"KOSIS 응답에 없는 시군구: {missing}")
