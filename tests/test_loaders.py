@@ -39,9 +39,14 @@ class RebTest(unittest.TestCase):
         # 수원시 장안구: 일반구는 (시도, 시, 구)
         for b, a in (("관할시군구내", "10"), ("관할시도내", "10"), ("관할시도외_서울", "20"), ("관할시도외_기타", "0")):
             n += 1; out.append(reb_row(n, "경기", "수원시", "장안구", b, "동(호)수", a, "-"))
-        # 인천 중구: 2026-07 개편으로 폐지돼 '(구)중구'로 나오고, 둘째 달은 자료가 없다
+        # 인천 중구: 2026-07 개편으로 '(구)중구'가 폐지되고 영종구 + 제물포구로 나온다.
+        # 첫 달은 옛 구에만, 둘째 달은 새 구에만 값이 있다. 달마다 있는 행을 더해 28110으로 되돌려야 한다.
         for b, a in (("관할시군구내", "5"), ("관할시도내", "5"), ("관할시도외_서울", "0"), ("관할시도외_기타", "0")):
             n += 1; out.append(reb_row(n, "인천", "(구)중구", "(구)중구", b, "동(호)수", a, "-"))
+        for b, a in (("관할시군구내", "30"), ("관할시도내", "0"), ("관할시도외_서울", "10"), ("관할시도외_기타", "0")):
+            n += 1; out.append(reb_row(n, "인천", "영종구", "영종구", b, "동(호)수", "-", a))
+        for b, a in (("관할시군구내", "10"), ("관할시도내", "20"), ("관할시도외_서울", "10"), ("관할시도외_기타", "0")):
+            n += 1; out.append(reb_row(n, "인천", "제물포구", "제물포구", b, "동(호)수", "-", a))
         # 옹진군: 행은 있지만 거래가 없다
         for b in ("관할시군구내", "관할시도내", "관할시도외_서울", "관할시도외_기타"):
             n += 1; out.append(reb_row(n, "인천", "옹진군", "옹진군", b, "동(호)수", "-", "0"))
@@ -60,8 +65,18 @@ class RebTest(unittest.TestCase):
         self.assertEqual(got[("2025-03", "28110")]["same_sgg"], "0.5")
         # 자료가 없는 달은 0으로 채우지 않고 빼고, 어디가 비었는지 알린다
         self.assertNotIn(("2025-04", "41111"), got)
-        self.assertEqual(info["gaps"], {"41111": ["2025-04"], "28110": ["2025-04"]})
+        self.assertEqual(info["gaps"], {"41111": ["2025-04"]})
         self.assertEqual(info["empty"], ["28720"])   # 전 기간 거래 0
+
+    def test_reform_split_gu_summed_back(self):
+        """인천 개편: 옛 구가 빈 달은 새 구(영종 + 제물포)를 더해 28110 으로 되돌린다."""
+        with tempfile.TemporaryDirectory() as d:
+            info, got = self.write(d, self.rows())
+        # 영종 30/0/10/0 + 제물포 10/20/10/0 = 40/20/20/0, 합 80
+        r = got[("2025-04", "28110")]
+        self.assertEqual([r[k] for k in ("same_sgg", "same_sido", "seoul", "other")], ["0.5", "0.25", "0.25", "0.0"])
+        self.assertEqual(got[("2025-03", "28110")]["same_sgg"], "0.5")   # 개편 전 달은 옛 구만
+        self.assertNotIn("28110", info["gaps"])
 
     def test_unmapped_region_fails_loudly(self):
         """이름이 표와 다르면(또는 추출 범위에 빠졌으면) 조용히 지나가지 않는다."""
@@ -97,6 +112,22 @@ class MdisTest(unittest.TestCase):
             with open(dst, encoding="utf-8") as f:
                 rows = {(r["src"], r["dst"]): int(r["persons"]) for r in csv.DictReader(f)}
         self.assertEqual(rows, {("11680", "41135"): 2, ("00000", "11680"): 1, ("11500", "41190"): 1})
+
+    def test_2026_reform_codes_merged_and_jemulpo_raises(self):
+        with tempfile.TemporaryDirectory() as d:
+            def run(rows):
+                with open(os.path.join(d, "2026.csv"), "w", encoding="cp949", newline="") as f:
+                    w = csv.writer(f); w.writerow(HEADER_2022); w.writerows([r + ["00001", "00002"] for r in rows])
+                dst = os.path.join(d, "od.csv")
+                mdis.load(os.path.join(d, "*.csv"), dst)
+                with open(dst, encoding="utf-8") as f:
+                    return {(r["src"], r["dst"]): int(r["persons"]) for r in csv.DictReader(f)}
+            rows = run([["2026", "8", "41", "597", "11", "680", "3"],    # 강남 → 동탄구: 화성
+                        ["2026", "8", "28", "290", "28", "275", "3"],    # 서해구 → 검단구: 옛 서구 안 이동
+                        ["2026", "8", "28", "155", "41", "591", "3"]])   # 만세구 → 영종구: 화성 → 중구
+            self.assertEqual(rows, {("11680", "41590"): 1, ("28260", "28260"): 1, ("41590", "28110"): 1})
+            with self.assertRaises(ValueError):
+                run([["2026", "8", "28", "125", "11", "680", "3"]])     # 제물포구: 중구·동구로 나눌 수 없음
 
 
 # 2021~22년 설명서 기준 머리글(행정구역 = 통계청 체계일 수 있음)

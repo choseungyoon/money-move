@@ -14,7 +14,13 @@
 주의:
   - 계약 해제 건(cdealType == 'O')은 제외한다. 안 빼면 취소된 신고가가 '자금 유입'으로 잡힌다.
   - 전월세 갱신 계약은 이사가 없으므로 new_contracts(contractType == '신규')를 흐름에 쓴다.
-  - 부천시 2024년 구 재설치 코드(41192/41194/41196)는 41190으로 합친다.
+  - 새 구 코드는 기존 77개 지역으로 합친다(region_of). 근거는 행정안전부 법정동코드(jscode20260701, 말소코드 포함).
+      부천 2024 구 재설치 41192/41194/41196 → 41190
+      화성 2026-02-01 구 신설 41591 만세·41593 효행·41595 병점·41597 동탄 → 41590 (시 코드 41590은 유지)
+      인천 2026-07-01 개편(28110 중구·28140 동구·28260 서구 말소)
+        28155 영종구 → 28110 (법정동 8개 모두 옛 중구), 28275 서해구·28290 검단구 → 28260 (모두 옛 서구)
+        28125 제물포구 = 옛 중구 내륙 44개 동 + 옛 동구 7개 동 → 법정동 이름(umdNm)으로 나눈다(SPLIT).
+        옛 중구·동구 사이에 같은 이름의 법정동이 없어 깔끔하게 나뉜다. 모르는 이름이 오면 에러.
   - 응답 XML을 data/raw/molit 에 캐시하고, 계약월의 나이에 따라 다시 받는 주기를 달리한다(RefreshPolicy).
     공공데이터포털 API는 무료지만 일일 호출 한도가 있고, 전체 재수집은 시간이 오래 걸린다.
   - 다시 받을 때마다 이전 응답과 비교한 변경 건수를 molit_changes.csv 에 남긴다(cancel_lag.py가 분석).
@@ -34,8 +40,21 @@ from leverage import equity  # noqa: E402
 BASE = "https://apis.data.go.kr/1613000"
 TRADE = "RTMSDataSvcAptTrade/getRTMSDataSvcAptTrade"
 RENT = "RTMSDataSvcAptRent/getRTMSDataSvcAptRent"
-CODE_ALIAS = {"41192": "41190", "41194": "41190", "41196": "41190"}
-QUERY_CODES = {"41190": ["41192", "41194", "41196", "41190"]}
+CODE_ALIAS = {"41192": "41190", "41194": "41190", "41196": "41190",
+              "41591": "41590", "41593": "41590", "41595": "41590", "41597": "41590",
+              "28155": "28110", "28275": "28260", "28290": "28260"}
+_DONGGU = {"만석동", "화수동", "송현동", "화평동", "창영동", "금곡동", "송림동"}
+_JUNGGU = {"경동", "내동", "답동", "도원동", "사동", "선린동", "선화동", "신생동", "신포동", "용동", "유동", "율목동",
+           "인현동", "전동", *(f"관동{k}가" for k in range(1, 4)), *(f"북성동{k}가" for k in range(1, 4)),
+           *(f"송월동{k}가" for k in range(1, 4)), *(f"송학동{k}가" for k in range(1, 4)),
+           *(f"신흥동{k}가" for k in range(1, 4)), *(f"중앙동{k}가" for k in range(1, 5)),
+           *(f"항동{k}가" for k in range(1, 8)), *(f"해안동{k}가" for k in range(1, 5))}
+SPLIT = {"28125": {"28110": _JUNGGU, "28140": _DONGGU}}  # 제물포구 법정동 → 옛 구
+# 우리 지역 → 조회할 LAWD_CD. API는 개편 전 달(2024-01 포함)도 새 코드로만 주고 옛 코드는 0건이다
+# (molit-probe 2026-10: 41590, 28110, 28140, 28260 모두 0건, 옛·새 겹침 없음). 그래서 새 코드만 조회한다.
+QUERY_CODES = {"41190": ["41192", "41194", "41196", "41190"],
+               "41590": ["41591", "41593", "41595", "41597"],
+               "28110": ["28155", "28125"], "28140": ["28125"], "28260": ["28275", "28290"]}
 PAGE = 1000
 
 TRADE_COLS = ["ym", "code", "trades", "value_eok", "corp_trades", "corp_value_eok", "equity_eok"]
@@ -217,6 +236,18 @@ class Client:
                         c["added"], c["removed"], c["cancelled"], c["price_changed"], c["other_changed"]])
 
 
+def region_of(lawd, it):
+    """조회 코드와 거래 1건 → 우리 77개 지역 코드. 나눌 수 없는 법정동이면 에러."""
+    split = SPLIT.get(lawd)
+    if not split:
+        return CODE_ALIAS.get(lawd, lawd)
+    umd = (it.get("umdNm") or "").strip()
+    for code, names in split.items():
+        if umd in names:
+            return code
+    raise ValueError(f"{lawd}의 법정동 '{umd}'을 기존 지역으로 나눌 수 없습니다. molit.SPLIT을 확인하세요.")
+
+
 def num(s):
     return float(s.replace(",", "")) if s else 0.0
 
@@ -282,11 +313,12 @@ def fetch(client, codes, months, out_dir):
     for code in codes:
         for ym in months:
             for q in QUERY_CODES.get(code, [code]):
-                c = CODE_ALIAS.get(q, q)
                 for it in client.items(TRADE, q, ym):
-                    add_trade(trade, ym, c, it, meta, ctrade)
+                    if region_of(q, it) == code:  # 제물포구는 중구·동구 차례에 각자 몫만 센다
+                        add_trade(trade, ym, code, it, meta, ctrade)
                 for it in client.items(RENT, q, ym):
-                    add_rent(rent, ym, c, it, meta, crent)
+                    if region_of(q, it) == code:
+                        add_rent(rent, ym, code, it, meta, crent)
             print(f"  {code} {ym} (API 호출 누적 {client.calls})", file=sys.stderr)
     os.makedirs(out_dir, exist_ok=True)
     merge_write(os.path.join(out_dir, "trade_region_month.csv"), TRADE_COLS,

@@ -42,4 +42,37 @@ for name, path in (("매매", molit.TRADE), ("전월세", molit.RENT)):
             extra = f", 계약구분 {dict(Counter(it.get('contractType', '') for it in items))}"
         print(f"::notice title={name} {ymd}::강남구 totalCount {total}, 받은 행 {len(items)}{extra}, "
               f"aptSeq {'있음' if 'aptSeq' in fields else '없음'}, 필드 {fields}")
+
+# 행정구역 개편 확인: 개편 전후 달에 옛·새 LAWD_CD로 각각 조회해 건수, 겹침, 지역 배분을 본다.
+# 같은 거래가 옛·새 코드 양쪽에 나오면 QUERY_CODES로 둘 다 조회할 때 두 번 세게 된다.
+REFORM = {"화성 2026-02-01": (["41590"], ["41591", "41593", "41595", "41597"], ["2024-01", "2026-01", "2026-03"]),
+          "인천 2026-07-01": (["28110", "28140", "28260"], ["28125", "28155", "28275", "28290"], ["2024-01", "2026-06", "2026-08"])}
+deal = lambda it: tuple(it.get(k, "") for k in ("umdNm", "jibun", "aptNm", "dealYear", "dealMonth", "dealDay", "floor",  # noqa: E731
+                                                  "excluUseAr", "dealAmount", "deposit", "monthlyRent"))
+client = molit.Client(key)
+for label, (olds, news, months) in REFORM.items():
+    for name, path in (("매매", molit.TRADE), ("전월세", molit.RENT)):
+        for ym in months:
+            got = {}
+            for c in olds + news:
+                try:
+                    got[c] = list(client.items(path, c, ym))
+                except Exception as e:
+                    ok = False
+                    print(f"[개편] {label} {name} {ym} {c} 실패: {hide(str(e))[:200]}")
+                    got[c] = []
+            o = Counter(deal(it) for c in olds for it in got[c])
+            n = Counter(deal(it) for c in news for it in got[c])
+            sgg = {c: sorted({it.get("sggCd", "?") for it in got[c]}) for c in got if got[c]}
+            print(f"[개편] {label} {name} {ym} 건수 {{{', '.join(f'{c}: {len(v)}' for c, v in got.items())}}} "
+                  f"옛∩새 겹침 {sum((o & n).values())}건 sggCd {sgg}")
+            bad, share = Counter(), Counter()
+            for c in olds + news:
+                for it in got[c]:
+                    try:
+                        share[(c, molit.region_of(c, it))] += 1
+                    except ValueError:
+                        bad[(c, it.get("umdNm"))] += 1
+            print(f"[개편] {label} {name} {ym} 배분 {dict(share)} 나눌 수 없음 {dict(bad)}")
+print(f"::notice title=개편 확인::로그의 [개편] 줄 참고 (API 호출 {client.calls}회)")
 sys.exit(0 if ok else 1)

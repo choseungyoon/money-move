@@ -23,9 +23,11 @@ lvl = Counter(len(str(r[0])) for r in uniq)
 print(f"::notice title=code_lengths::{dict(lvl)} first10={json.dumps(uniq[:10], ensure_ascii=False)}")
 other = {k for x in rows[:1] for k in x if k.startswith(("C2", "C3", "OBJ"))}
 print(f"::notice title=other_dims::{sorted(other)} sample={json.dumps({k: rows[0].get(k) for k in rows[0] if k not in ('DT',)}, ensure_ascii=False)[:1500]}")
+# 행정구역 개편 확인: 인천·경기의 모든 지역 코드(일반구 포함 여부, 새 인천 구 코드). 로그에 출력.
+print("[지역] 28·41:", json.dumps([r for r in uniq if str(r[0])[:2] in ("28", "41")], ensure_ascii=False))
 q = {"method": "getList", "apiKey": key, "format": "json", "jsonVD": "Y", "prdSe": "M", "startPrdDe": "202605", "endPrdDe": "202608",
      "orgId": kosis.TABLE["orgId"], "tblId": kosis.TABLE["tblId"], "itmId": "T10+T20+T30+", "objL1": "ALL"}
-with urllib.request.urlopen(f"{kosis.BASE}?{urllib.parse.urlencode(q)}", timeout=60) as r:
+with urllib.request.urlopen(f"{kosis.BASE}?{urllib.parse.urlencode(q)}", timeout=120) as r:
     vals = json.loads(r.read())
 want = ("28110", "28125", "28140", "28155", "28260", "28275", "28290", "41590", "41190")
 for c in want:

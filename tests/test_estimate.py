@@ -98,6 +98,17 @@ class KosisMarginsTest(unittest.TestCase):
         _, missing = kosis.margins("K", "2026-01", "2026-01", ["41285"], getter=getter)
         self.assertEqual(missing, ["41285"])                                  # 고양시(41280)가 응답에 없으면 우리 코드로 알린다
 
+    def test_abolished_codes_reported_as_zero_raise(self):
+        """2026-07 인천 개편 뒤 KOSIS는 28110·28140·28260을 빠뜨리지 않고 0으로 준다. 0을 그대로 쓰면 안 된다."""
+        def getter(url):
+            rows = [{"ITM_ID": i, "C1": c, "PRD_DE": p, "DT": dt} for p, c, i, dt in
+                    (("202606", "28260", "T10", "8716"), ("202606", "28260", "T20", "6520"), ("202606", "28260", "T30", "3044"),
+                     ("202607", "28260", "T10", "0"), ("202607", "28260", "T20", "0"), ("202607", "28260", "T30", "0"),
+                     ("202607", "28290", "T10", "5186"))]
+            return json.dumps(rows).encode()
+        with self.assertRaisesRegex(RuntimeError, "2026-07', '28260"):
+            kosis.margins("K", "2026-06", "2026-07", ["28260"], getter=getter)
+
 
 if __name__ == "__main__":
     unittest.main()
