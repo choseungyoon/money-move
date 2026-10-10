@@ -385,7 +385,7 @@ button { touch-action: manipulation; }
   <details class="method" id="method">
     <summary>이 흐름은 어떻게 추정했나<span>데이터 출처 · 모형 · 한계</span></summary>
     <div class="body">
-      <p>아파트 실거래 자료에는 매물의 위치와 가격만 있고, 매수자가 어디에서 왔는지는 공개되지 않습니다. 그래서 지도 위 화살표 중 <b>인구 이동만 실측 OD</b>이고, 매매 자금과 전월세 보증금은 아래 세 자료를 결합해 추정한 값입니다.</p>
+      <p>아파트 실거래 자료에는 매물의 위치와 가격만 있고, 매수자가 어디에서 왔는지는 공개되지 않습니다. 그래서 지도 위 화살표 중 <b id="od-real">인구 이동만 실측 OD</b>이고, 매매 자금과 전월세 보증금은 아래 세 자료를 결합해 추정한 값입니다.</p>
       <div class="tablewrap">
         <table class="src">
           <thead><tr><th>자료</th><th>제공처</th><th>쓰는 정보</th><th>단위</th></tr></thead>
@@ -831,7 +831,7 @@ const D = /*__DATA__*/null;
     const odNote = st.layer !== "move" && win ? ` · 출발지 배분: ${ymLabel(win[0])}~${ymLabel(win[1])} 인구이동 기준${winEst ? "(일부 추정)" : ""}` : "";
     $("#board-f").textContent = subbed()
       ? `${unit} · ${ymLabel(months[st.mi])} 통계 공개 전이라 ${srcLabel()} 자료를 표시합니다. 상태는 ${srcLabel()}의 전월 대비`
-      : `${unit} · 상태는 같은 노선의 전월 대비${odNote}${isEst() ? " · 추정치: KOSIS 시군구별 전입·전출 총계에 최근 12개월 MDIS 이동 패턴을 맞춘 값" : ""}`;
+      : `${unit} · 상태는 같은 노선의 전월 대비${odNote}${isEst() ? (D.meta.demo ? " · 추정치(데모: 실제 KOSIS·MDIS 아님)" : " · 추정치: KOSIS 시군구별 전입·전출 총계에 최근 12개월 MDIS 이동 패턴을 맞춘 값") : ""}`;
   }
   function setHl(k) { st.hl = k || null; [...board.children].forEach((tr) => tr.classList.toggle("hl", tr.dataset.k === k)); drawMap(); }
 
@@ -892,7 +892,9 @@ const D = /*__DATA__*/null;
     const el = $("#nodata"), miss = st.layer === "move" && odMissing.has(months[st.mi]);
     if (!miss && isEst()) {
       el.hidden = false;
-      el.innerHTML = `<b>${ymLabel(months[st.mi])} 인구 이동은 추정치입니다.</b><br>시군구별 전입·전출 총계(KOSIS 월별)에 최근 12개월 이동 패턴(MDIS 연간)을 맞췄습니다. MDIS ${months[st.mi].slice(0, 4)}년 자료가 나오면 실제 값으로 바뀝니다.`;
+      el.innerHTML = `<b>${ymLabel(months[st.mi])} 인구 이동은 추정치입니다.</b><br>` + (D.meta.demo
+        ? "<b>이 화면은 데모입니다.</b> KOSIS·MDIS 실제 통계가 아니라, 시연용으로 만든 가짜 총계에 같은 추정 방법(IPF)을 적용한 값입니다."
+        : `시군구별 전입·전출 총계(KOSIS 월별)에 최근 12개월 이동 패턴(MDIS 연간)을 맞췄습니다. MDIS ${months[st.mi].slice(0, 4)}년 자료가 나오면 실제 값으로 바뀝니다.`);
       return;
     }
     el.hidden = !miss;
@@ -1462,6 +1464,7 @@ const D = /*__DATA__*/null;
   }
 
   if (!D.meta.demo) { $("#demo").hidden = true; $("#demo-note").hidden = true; }
+  else $("#od-real").textContent = "인구 이동만 실측 OD(실데이터 실행 시. 지금은 데모)";
   layout(); drawAll();
   function openFromHash() {
     const m = /^#r(\d{5})$/.exec(location.hash);

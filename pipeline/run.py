@@ -122,13 +122,22 @@ def main():
             manifest[key] = h.hexdigest()
             return True
 
-        src, dst = os.path.join(raw, "reb_buyer_residence.csv"), os.path.join(interim, "buyer_origin_share.csv")
+        # R-ONE 에서 받은 파일은 이름이 길고 한글이라 그대로 두어도 된다: data/raw/r-one/*.csv 도 찾는다
+        cands = [os.path.join(raw, "reb_buyer_residence.csv")] + sorted(glob.glob(os.path.join(raw, "r-one", "*.csv")))
+        src, dst = next((p for p in cands if os.path.exists(p)), cands[0]), os.path.join(interim, "buyer_origin_share.csv")
         if os.path.exists(src) and (changed(src) or not os.path.exists(dst)):
-            reb.load(src, dst)
+            info = reb.load(src, dst)
+            msg = f"부동산원 매입자거주지: {info['rows']:,}행 ({info['months'][0]}~{info['months'][-1]})"
+            if info["empty"]:
+                msg += f", 전 기간 거래 없음 {info['empty']}"
+            if info["gaps"]:
+                msg += f", 자료 없는 달 {{{', '.join(f'{c}: {len(m)}개월' for c, m in sorted(info['gaps'].items()))}}}"
+            print(msg)
         elif os.path.exists(src):
             print("부동산원 매입자거주지: 원천 파일이 그대로라 기존 buyer_origin_share.csv를 사용합니다.")
         elif not os.path.exists(dst):
-            sys.exit(f"부동산원 매입자거주지 자료가 없습니다: {src}")
+            sys.exit(f"부동산원 매입자거주지 자료가 없습니다. R-ONE「(월) 매입자거주지별 아파트거래현황」을 "
+                     f"{os.path.relpath(cands[0], ROOT)} 또는 data/raw/r-one/ 에 두세요.")
         # MDIS: 원자료가 있으면(내 PC) 집계하고, 없으면(GitHub Actions) 커밋된 집계 파일을 쓴다
         od = os.path.join(interim, "migration_od_month.csv")
         mraw = mdis_raw_files(raw)
