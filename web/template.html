@@ -174,6 +174,22 @@ button { touch-action: manipulation; }
 #month::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--flap-ink); border: 2px solid var(--ink); }
 #month::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--flap-ink); border: 2px solid var(--ink); }
 
+/* 의견 보내기 */
+.fb-open { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 25; padding: 9px 14px; border-radius: 999px;
+  border: 1px solid var(--flap-ink); background: var(--panel); color: var(--flap-ink); font: inherit; font-size: 13px; cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, .4); }
+.fb-open:hover { background: var(--land); }
+.fb { position: fixed; right: 16px; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); z-index: 26; width: min(340px, calc(100vw - 32px));
+  background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 14px; box-shadow: 0 8px 28px rgba(0, 0, 0, .5); }
+.fb-h { display: flex; justify-content: space-between; align-items: center; }
+.fb-h button { border: 0; background: none; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; }
+.fb-p { margin: 6px 0 10px; color: var(--muted); font-size: 12px; }
+.fb-opts { display: grid; gap: 6px; }
+.fb-opts button { display: grid; gap: 2px; text-align: left; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--ink); color: var(--fg); font: inherit; cursor: pointer; }
+.fb-opts button:hover { border-color: var(--flap-ink); }
+.fb-opts b { font-weight: 500; font-size: 13px; }
+.fb-opts span { color: var(--muted); font-size: 11px; }
+.fb-ctx { margin: 10px 0 0; color: var(--muted); font-size: 11px; }
+
 /* 방법론 */
 .method { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 0 16px; }
 .method summary { cursor: pointer; padding: 14px 0; font-weight: 600; }
@@ -443,6 +459,19 @@ LTV: 규제지역 50% (10·15 이후 40%), 비규제 70%
       </ul>
     </div>
   </details>
+</div>
+
+<button class="fb-open" id="fb-open" aria-haspopup="dialog" aria-controls="fb" hidden>의견 보내기</button>
+<div class="fb" id="fb" role="dialog" aria-labelledby="fb-title" hidden>
+  <div class="fb-h"><b id="fb-title">의견 보내기</b><button id="fb-close" aria-label="닫기">×</button></div>
+  <p class="fb-p">어떤 의견인가요? 누르면 짧은 양식이 새 창으로 열려요.</p>
+  <div class="fb-opts">
+    <button data-type="feature"><b>이런 기능이 있으면 좋겠어요</b><span>보고 싶은 화면, 불편한 점</span></button>
+    <button data-type="data"><b>이런 데이터가 있었으면 좋겠어요</b><span>주식·금·코인, 다른 지역, 다른 지표</span></button>
+    <button data-type="error"><b>데이터가 잘못된 것 같아요</b><span>이상한 숫자, 틀린 지역</span></button>
+    <button data-type="etc"><b>기타 의견</b><span>무엇이든</span></button>
+  </div>
+  <p class="fb-ctx">함께 보내는 정보: <span id="fb-ctx"></span></p>
 </div>
 
 <script>
@@ -1566,6 +1595,24 @@ const D = /*__DATA__*/null;
 
   if (!D.meta.demo) { $("#demo").hidden = true; $("#demo-note").hidden = true; }
   else $("#od-real").textContent = "인구 이동만 실측 OD(실데이터 실행 시. 지금은 데모)";
+  /* ---------- 의견 보내기 ----------
+     정적 사이트라 서버 없이 외부 양식(Tally)으로 받는다. 보고 있던 달·흐름·지역과 링크를 숨은 칸으로 넘겨
+     '데이터가 잘못된 것 같아요'가 어느 화면 이야기인지 알 수 있게 한다.
+     FEEDBACK_FORM 이 비어 있으면 버튼을 숨긴다. 양식 숨은 칸 이름: type, ym, layer, region, link */
+  const FEEDBACK_FORM = "";
+  const fb = $("#fb"), fbOpen = $("#fb-open");
+  if (FEEDBACK_FORM) fbOpen.hidden = false;
+  const fbContext = () => `${ymLabel(months[st.mi])} · ${LAYERS[st.layer].name}${st.focus != null ? " · " + nodes[st.focus].short : ""}`;
+  fbOpen.onclick = () => { fb.hidden = !fb.hidden; $("#fb-ctx").textContent = fbContext(); if (!fb.hidden) fb.querySelector(".fb-opts button").focus(); };
+  $("#fb-close").onclick = () => { fb.hidden = true; fbOpen.focus(); };
+  fb.querySelectorAll(".fb-opts button").forEach((b) => b.addEventListener("click", () => {
+    const q = new URLSearchParams({ type: b.dataset.type, ym: months[st.mi], layer: st.layer,
+      region: st.focus != null ? `${nodes[st.focus].code} ${nodes[st.focus].name}` : "", link: location.href });
+    window.open(FEEDBACK_FORM + (FEEDBACK_FORM.includes("?") ? "&" : "?") + q.toString(), "_blank", "noopener");
+    fb.hidden = true;
+  }));
+  addEventListener("keydown", (e) => { if (e.key === "Escape" && !fb.hidden) { fb.hidden = true; fbOpen.focus(); } });
+
   readHash();
   layout(); drawAll();
   function openFromHash() {
