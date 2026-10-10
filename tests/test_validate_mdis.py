@@ -23,6 +23,11 @@ class ValidateMdisTest(unittest.TestCase):
         m = v.mdis_margins(TRUTH)[("2025-01", "11680")]
         self.assertEqual(m, {"in_total": 80 + 300 + 40, "out_total": 100 + 300, "intra": 300})
 
+    def test_general_gu_grouped_into_city_like_kosis(self):
+        m = v.mdis_margins(od([("2025-01", "41131", "41135", 10), ("2025-01", "41135", "41135", 5), ("2025-01", "11680", "41135", 3)]))
+        self.assertEqual(m[("2025-01", "41130")], {"in_total": 18, "out_total": 15, "intra": 15})  # 수정→분당은 성남시 안 이동
+        self.assertNotIn(("2025-01", "41135"), m)
+
     def test_same_population_passes(self):
         res = v.compare(TRUTH, kosis_from(TRUTH))
         self.assertTrue(res["ok"])

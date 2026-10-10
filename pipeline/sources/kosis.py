@@ -36,7 +36,11 @@ def latest_month(api_key, table=TABLE, getter=http_get):
 
 # 시군구별 이동자수(DT_1B26001_A01) 항목. GitHub Actions에서 실제 응답으로 확인함(2026-10).
 ITEMS = {"T10": "in_total", "T20": "out_total", "T30": "intra"}  # 총전입, 총전출, 시군구 내 이동
-CODE_ALIAS = {"41192": "41190", "41194": "41190", "41196": "41190"}
+# 이 표는 경기 일반구 없이 시 단위로만 준다(kosis-probe 2026-10: 41110 수원시는 있고 41111 장안구는 없음).
+# 시 총계의 시군구 내(T30)에는 그 시의 구 사이 이동도 들어 있다(MDIS를 구→시로 묶으면 정수까지 일치).
+# 그래서 일반구 총계는 구별로 나누지 않고 시 묶음으로 쓴다(estimate_od.py). 부천(41190)은 KOSIS에도 시 하나로 나온다.
+SI_OF_GU = {c: c[:4] + "0" for c in ("41111", "41113", "41115", "41117", "41131", "41133", "41135", "41171", "41173",
+                                     "41271", "41273", "41281", "41285", "41287", "41461", "41463", "41465")}
 MARGIN_COLS = ["ym", "code", "in_total", "out_total", "intra"]
 
 
@@ -52,7 +56,9 @@ def _months(start, end):
 
 def margins(api_key, start, end, codes, getter=http_get, chunk=6):
     """start~end('YYYY-MM') 시군구별 총전입·총전출·시군구내 이동. 한 번에 받을 수 있는 양에 한도가 있어 chunk개월씩.
-    codes: 우리 77개 시군구 코드. 응답에 없는 코드는 결과에서 빠지고 missing 으로 돌려준다."""
+    codes: 우리 77개 시군구 코드. 결과는 KOSIS 코드(일반구는 시 코드 SI_OF_GU)로 준다.
+    응답에 없는 우리 코드는 missing 으로 돌려준다."""
+    wanted = {SI_OF_GU.get(c, c) for c in codes}
     ms = _months(start, end)
     seen = {}  # (ym, 원래 코드, 항목) → 값. 겹친 응답이 와도 두 번 더하지 않도록 덮어쓴다.
     for k in range(0, len(ms), chunk):
@@ -65,14 +71,14 @@ def margins(api_key, start, end, codes, getter=http_get, chunk=6):
             raise RuntimeError(f"KOSIS 오류 {body.get('err')}: {body.get('errMsg')}")
         for r in body:
             field, raw = ITEMS.get(r.get("ITM_ID")), str(r.get("C1"))
-            if not field or CODE_ALIAS.get(raw, raw) not in codes:
+            if not field or raw not in wanted:
                 continue
             p = str(r["PRD_DE"])
             seen[(f"{p[:4]}-{p[4:6]}", raw, field)] = int(float(r.get("DT") or 0))
     acc = {}
-    for (ym, raw, field), v in seen.items():  # 부천 구 코드(2024 재설치)만 41190으로 합친다
-        row = acc.setdefault((ym, CODE_ALIAS.get(raw, raw)), {"in_total": 0, "out_total": 0, "intra": 0})
-        row[field] += v
+    for (ym, raw, field), v in seen.items():
+        acc.setdefault((ym, raw), {"in_total": 0, "out_total": 0, "intra": 0})[field] = v
     rows = [[ym, c, v["in_total"], v["out_total"], v["intra"]] for (ym, c), v in sorted(acc.items())]
-    missing = sorted(set(codes) - {c for _, c in acc})
+    got = {c for _, c in acc}
+    missing = sorted(c for c in codes if SI_OF_GU.get(c, c) not in got)
     return rows, missing
