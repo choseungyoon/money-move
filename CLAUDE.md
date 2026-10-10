@@ -11,6 +11,7 @@ bash scripts/setup.sh                      # 처음 한 번: 점검 + 데모 빌
 bash scripts/check.sh                      # push 전: CI와 같은 점검(테스트, 데모 빌드, 페이지 문법)
 python3 pipeline/run.py demo               # 데모 데이터 → dist/
 python3 pipeline/run.py mdis               # MDIS 원자료(data/raw/mdis) → data/mdis/migration_od_month.csv.gz
+python3 pipeline/validate_mdis.py          # MDIS 집계 ↔ KOSIS 월별 총계 대조 (비율 1.00 근처여야 통과)
 python3 pipeline/run.py real --from 2024-01 --to 2026-08   # .env의 MOLIT_KEY, KOSIS_KEY 사용
 python3 -m http.server -d dist 8000        # 미리보기 (file://로 열면 상세 파일 요청이 막힌다)
 ```
@@ -19,6 +20,7 @@ python3 -m http.server -d dist 8000        # 미리보기 (file://로 열면 상
 
 - 파이프라인은 표준 라이브러리만 쓴다(예외: `build_geo.py`의 shapely, 결과물 `data/regions_geo.json`은 커밋돼 있음).
 - 테스트는 `unittest`. CI는 `-W error::ResourceWarning`이다. 파일은 `with` 또는 `Path.read_text()`로 연다.
+- MDIS 원자료 행을 cat/head 등으로 대화에 출력하지 않는다(제3자 제공 금지). 집계 결과와 오류 메시지만 본다.
 - 커밋 금지: `data/raw/`(특히 MDIS 원자료는 재배포 금지), `data/interim/`, `dist/`, `data/flows.json`, `data/detail/`, `.env`.
   MDIS는 `run.py mdis`가 만든 시군구 집계 `data/mdis/*.csv.gz`만 커밋한다.
 - 추정·대체한 값은 화면에 반드시 표시한다(`meta.od_estimated`, `meta.move_src` → UI의 '추정' 라벨).
