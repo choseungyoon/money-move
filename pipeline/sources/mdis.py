@@ -61,6 +61,9 @@ LAYOUT = [("전입행정기관코드_시도", 2), ("전입행정기관코드_시
           ("전입사유코드", 1), ("세대주관계코드", 1), ("세대주만연령", 3), ("세대주성별코드", 1), ("세대관련코드", 1),
           ("이동_총인구수", 2), ("이동_남자인구수", 2), ("이동_여자인구수", 2)]
 WIDTH = sum(n for _, n in LAYOUT)  # 41
+# 인구관련연간자료(Format_PROC…942750.xls): 한 행에 전입자 1~10의 나이·성별, 41항목, 고정길이 85자.
+# 이 서비스는 세대관련 자료만 쓴다(이동_총인구수로 사람 수도 나온다). 같은 폴더에 있으면 건너뛴다.
+PERSON_ITEMS, PERSON_WIDTH = 41, 85
 OUT_COLS = ["ym", "src", "dst", "persons", "persons_all", "households", "households_all"]
 
 
@@ -95,6 +98,16 @@ def resolve(header):
 def _code5(sd, sgg):
     sgg = (sgg or "").strip()
     return sgg if len(sgg) == 5 else f"{sd.strip()}{sgg[-3:].zfill(3)}"
+
+
+def file_kind(path):
+    """첫 줄로 자료 종류를 판별: 'household'(세대관련) 또는 'person'(인구관련)."""
+    with open(path, encoding=encoding_of(path), errors="replace", newline="") as f:
+        first = f.readline().lstrip("\ufeff").rstrip("\r\n")
+    if first[:1].isdigit():  # 머리글 없음
+        n = len(next(csv.reader([first]))) if "," in first else None
+        return "person" if n == PERSON_ITEMS or (n is None and len(first) == PERSON_WIDTH) else "household"
+    return "person" if "전입자1_" in first else "household"
 
 
 def _headerless(f, path):
@@ -171,6 +184,13 @@ def load(src, dst, codes_path=CODES):
     acc = defaultdict(lambda: [0, 0, 0, 0])  # persons_h, persons_all, households_h, households_all
     years = defaultdict(Counter)  # 추출 조건 점검: 행 수, 인천, 비수도권에서 출발, 비수도권으로 도착
     report = {}
+    skipped = [p for p in paths if file_kind(p) == "person"]
+    for p in skipped:
+        report[os.path.basename(p)] = {"skipped": "인구관련연간자료(쓰지 않음)"}
+    paths = [p for p in paths if p not in skipped]
+    if not paths:
+        raise FileNotFoundError(f"MDIS 세대관련연간자료가 없습니다(인구관련연간자료만 {len(skipped)}개). "
+                                "국내인구이동통계 > 세대관련연간자료를 받으세요.")
     for path in paths:
         scheme, evidence = detect_scheme(path, codes)
         table, capital = codes[scheme], SCHEMES[scheme]

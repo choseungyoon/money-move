@@ -62,6 +62,9 @@ def mdis_aggregate(paths, interim):
     dst = os.path.join(interim, "migration_od_month.csv")
     rep = mdis.load(paths, dst)
     for name, info in rep.items():
+        if "skipped" in info:
+            print(f"MDIS {name}: 건너뜀 - {info['skipped']}. data/raw/mdis/에서 빼도 됩니다.")
+            continue
         print(f"MDIS {name}: {info['rows']:,}행, 코드 체계 {info['scheme']} (근거 {info['evidence']})" + (f", 대응 안 된 코드 {info['unmapped']}" if info["unmapped"] else ""))
     os.makedirs(os.path.dirname(MDIS_AGG), exist_ok=True)
     with open(dst, "rb") as s, open(MDIS_AGG, "wb") as raw_out, gzip.GzipFile(fileobj=raw_out, mode="wb", filename="", mtime=0) as g:

@@ -213,6 +213,37 @@ class MdisNationwideSchemeTest(unittest.TestCase):
                 self.load(d, rows)
 
 
+class MdisPersonFileTest(unittest.TestCase):
+    """같은 폴더에 인구관련연간자료(41항목)가 섞여 있어도 세대관련만 읽는다."""
+    def person_row(self):
+        r = hh("41135", "11680")[:10]  # 앞 10항목은 세대관련과 같다
+        return r + ["1", "040", "1"] + [""] * 27 + ["000001"]
+
+    def test_person_files_skipped_in_any_form(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "2025_세대.csv"), "w", encoding="cp949", newline="") as f:
+                csv.writer(f).writerow(hh("41135", "11680", "3", 3))            # 머리글 없는 세대 CSV
+            with open(os.path.join(d, "2025_인구_a.csv"), "w", encoding="cp949", newline="") as f:
+                csv.writer(f).writerow(self.person_row())                       # 머리글 없는 인구 CSV
+            with open(os.path.join(d, "2025_인구_b.csv"), "w", encoding="cp949", newline="") as f:
+                w = csv.writer(f); w.writerow(HEADER_2025[:10] + ["전입자1_세대주관계코드"] + ["x"] * 30)
+                w.writerow(self.person_row())                                   # 머리글 있는 인구 CSV
+            with open(os.path.join(d, "2025_인구_c.txt"), "w", encoding="ascii") as f:
+                f.write("4113500000202509151168000000" + "3" + "10401" + " " * 45 + "000001\n")  # 고정길이 85자
+            rep = mdis.load(os.path.join(d, "*.*"), os.path.join(d, "od.csv"))
+            with open(os.path.join(d, "od.csv"), encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+        self.assertEqual(sorted(k for k, v in rep.items() if "skipped" in v), ["2025_인구_a.csv", "2025_인구_b.csv", "2025_인구_c.txt"])
+        self.assertEqual([(r["src"], r["dst"], r["persons"]) for r in rows], [("11680", "41135", "3")])
+
+    def test_only_person_files_fail(self):
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "2025_인구.csv"), "w", encoding="cp949", newline="") as f:
+                csv.writer(f).writerow(self.person_row())
+            with self.assertRaisesRegex(FileNotFoundError, "세대관련"):
+                mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))
+
+
 class MdisAggregateTest(unittest.TestCase):
     def test_gzip_copy_is_byte_stable(self):
         import gzip
