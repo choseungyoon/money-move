@@ -51,6 +51,14 @@ button, input { font: inherit; color: inherit; }
 
 /* 컨트롤 */
 .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+/* 탭과 월 선택은 늘 보이게 위에 붙인다(예전엔 월 선택이 화면 맨 아래에 있어 찾기 어려웠다) */
+.navbar { position: sticky; top: 0; z-index: 30; display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: space-between;
+  background: color-mix(in srgb, var(--ink) 92%, transparent); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  margin-inline: -20px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+.monthnav { display: inline-flex; align-items: center; gap: 6px; }
+.monthnav > button:not(.play) { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: var(--r-s); background: var(--panel); color: var(--fg); cursor: pointer; font-size: 18px; line-height: 1; }
+.monthnav > button:not(.play):hover { border-color: var(--muted); }
+.monthnav > button:disabled { opacity: .35; cursor: default; }
 .tabs, .seg { display: inline-flex; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-s); overflow: hidden; }
 .tab, .seg button { border: 0; background: none; padding: 7px 14px; white-space: nowrap; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; color: var(--muted); }
 .tab + .tab, .seg button + button { border-left: 1px solid var(--line); }
@@ -152,15 +160,16 @@ button { touch-action: manipulation; }
 .empty { color: var(--muted); font-size: 12px; }
 
 /* 타임라인 */
-.timeline { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; }
-.play { width: 44px; height: 44px; border-radius: var(--r-m); border: 1px solid var(--flap-ink); background: none; color: var(--flap-ink); cursor: pointer; font-size: 16px; }
+.timeline { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-m); padding: 12px 14px; }
+.play { width: 34px; height: 34px; border-radius: var(--r-s); border: 1px solid var(--flap-ink); background: none; color: var(--flap-ink); cursor: pointer; font-size: 13px; }
+.tl-foot { font-size: 11px; color: var(--muted); }
+.tl-head .muted { color: var(--muted); font-weight: 400; }
 .tl-main { display: grid; gap: 4px; min-width: 0; }
 .tl-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--muted); }
 .tl-head b { color: var(--fg); font-weight: 500; }
-#spark { width: 100%; height: 100px; display: block; }
+#spark { width: 100%; height: 132px; display: block; }
 #spark .bar-m { cursor: pointer; }
-.tl-pick { display: inline-flex; align-items: center; gap: 8px; }
-#ympick { font: inherit; font-family: var(--font-num); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-s); padding: 2px 6px; cursor: pointer; }
+#ympick { font: inherit; font-family: var(--font-num); font-size: 15px; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-s); padding: 5px 8px; cursor: pointer; height: 34px; }
 #month { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; margin: 6px 0; background: var(--line); border-radius: 2px; cursor: pointer; }
 #month::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--flap-ink); border: 2px solid var(--ink); }
 #month::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--flap-ink); border: 2px solid var(--ink); }
@@ -243,6 +252,9 @@ button { touch-action: manipulation; }
 }
 @media (max-width: 640px) {
   .app { padding-inline: 16px; }
+  .navbar { margin-inline: -16px; padding-inline: 16px; }
+  .monthnav { width: 100%; }
+  .monthnav select { flex: 1; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .views { margin-left: 0; }
   .controls > label { flex: 1 1 100%; }
@@ -277,12 +289,21 @@ button { touch-action: manipulation; }
     </div>
   </header>
 
-  <section class="controls" aria-label="보기 설정">
+  <section class="navbar" aria-label="흐름 종류와 월">
     <div class="tabs" role="tablist" aria-label="흐름 종류">
       <button class="tab" role="tab" id="tab-trade" data-layer="trade" style="--c: var(--trade)"><i></i>매매 자금</button>
       <button class="tab" role="tab" id="tab-rent" data-layer="rent" style="--c: var(--rent)"><i></i>전월세 보증금</button>
       <button class="tab" role="tab" id="tab-move" data-layer="move" style="--c: var(--move)"><i></i>인구 이동</button>
     </div>
+    <div class="monthnav" role="group" aria-label="월 선택">
+      <button id="m-prev" aria-label="이전 달">‹</button>
+      <select id="ympick" aria-label="년·월 선택"></select>
+      <button id="m-next" aria-label="다음 달">›</button>
+      <button class="play" id="play" aria-label="재생">▶</button>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="보기 설정">
     <div class="seg" id="tmode" role="group" aria-label="매매 금액 기준">
       <button id="tm-trade" data-mode="trade" aria-pressed="true">거래대금</button>
       <button id="tm-equity" data-mode="equity" aria-pressed="false">자기자본 추정</button>
@@ -296,6 +317,15 @@ button { touch-action: manipulation; }
   </section>
 
   <section class="kpis" id="kpis" aria-label="이달의 핵심 지표"></section>
+
+  <section class="timeline" aria-label="월별 추이">
+    <div class="tl-main">
+      <div class="tl-head"><span id="tl-title"></span><span id="tl-month"></span></div>
+      <svg id="spark" role="img" aria-label="월별 순유입 추이"></svg>
+      <div class="tl-foot"><span id="tl-note"></span></div>
+      <input type="range" id="month" min="0" max="0" step="1" aria-label="월">
+    </div>
+  </section>
 
   <main class="stage">
     <div class="mapwrap" id="mapwrap">
@@ -341,14 +371,6 @@ button { touch-action: manipulation; }
     </aside>
   </main>
 
-  <section class="timeline" aria-label="월 선택">
-    <button class="play" id="play" aria-label="재생">▶</button>
-    <div class="tl-main">
-      <div class="tl-head"><span id="tl-title"></span><span class="tl-pick"><select id="ympick" aria-label="년·월 선택"></select><span id="tl-month"></span></span></div>
-      <svg id="spark" role="img" aria-label="월별 시군구 간 흐름 규모"></svg>
-      <input type="range" id="month" min="0" max="0" step="1" aria-label="월">
-    </div>
-  </section>
 
   <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" hidden>
     <div class="sheet-in">
@@ -459,7 +481,10 @@ const D = /*__DATA__*/null;
   const prevMiOf = (mi) => { const p = srcMi(mi) - 1; return p >= 0 ? p : null; };  // 비교는 원천 월의 전월과
   const SEOUL = new Set(nodes.map((n, i) => n.sido === "서울" ? i : -1).filter((i) => i >= 0));
 
-  const st = { anim: !reduce, layer: "trade", tmode: "trade", mi: months.length - 1, noncap: false, focus: null, hover: null, hl: null, playing: false };
+  // 처음 여는 달은 '잠정'이 아닌 마지막 달. 이번 달은 신고기한(30일) 때문에 며칠치만 들어와 있어
+  // 기본으로 보여주면 거래가 폭락한 것처럼 보인다(2026-10 열자마자 거래대금 ▼89.5%).
+  const lastFull = (() => { for (let i = months.length - 1; i >= 0; i--) if (!D.meta.provisional.includes(months[i])) return i; return months.length - 1; })();
+  const st = { anim: !reduce, layer: "trade", tmode: "trade", mi: lastFull, noncap: false, focus: null, hover: null, hl: null, playing: false };
   try { const s = localStorage.getItem("mf-layer"); if (s && LAYERS[s]) { st.layer = s; if (tabOf(s) === "trade") st.tmode = s; } } catch (e) {}
 
   /* ---------- 숫자 표기 ---------- */
@@ -1222,31 +1247,61 @@ const D = /*__DATA__*/null;
     if (i != null && innerWidth <= 1080) focusEl.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "nearest" });
   }
 
-  /* ---------- 타임라인 ---------- */
+  /* ---------- 타임라인 ----------
+     예전 차트는 그 달 시군구 간 흐름의 '총량'이라 비교 기준이 없었다("많은 건가?"에 답하지 못했다).
+     지금은 방향이 있는 값을 보여준다: 지역을 고르면 그 지역의 순유입, 안 고르면 서울 → 경기·인천 순이동. */
   const svg = $("#spark");
+  const CAP_SIDO = ["경기", "인천"];
   function series() {
-    return months.map((ym) => {
-      const ld = D.months[ym].layers[st.layer];
-      return nodes.reduce((s, _, i) => s + (i === NONCAP ? 0 : io(i, ld)[0]), 0);
-    });
+    const L = LAYERS[st.layer];
+    if (st.focus != null) {
+      const n = nodes[st.focus];
+      return { vals: months.map((ym) => netOf(st.focus, D.months[ym].layers[st.layer])),
+               title: `<b>${n.short}</b> 순유입 · ${L.name}`,
+               pos: "들어온 쪽이 많은 달", neg: "빠져나간 쪽이 많은 달" };
+    }
+    const k = st.layer === "move" ? 0 : 1;   // sido 값: [건수(인원), 금액]
+    return { vals: months.map((ym) => {
+               const sd = D.months[ym].layers[st.layer].sido || {}, g = (key) => (sd[key] || [0, 0])[k];
+               return CAP_SIDO.reduce((a, t) => a + g(`서울>${t}`) - g(`${t}>서울`), 0);
+             }),
+             title: `<b>서울 → 경기·인천</b> 순이동 · ${L.name}`,
+             pos: "서울에서 빠져나간 쪽이 많은 달", neg: "서울로 들어온 쪽이 많은 달" };
   }
+  const signed = (v, layer) => (v >= 0 ? "+" : "−") + metric(Math.abs(v), layer);
   function drawSpark() {
-    const L = LAYERS[st.layer], vals = series();
-    const w = svg.clientWidth || 600, h = 100, top = 32, bot = 16, n = vals.length;
-    const mx = Math.max(...vals) * 1.05, bw = w / n, gap = Math.min(2, bw * 0.2);
-    const y = (v) => top + (h - top - bot) * (1 - v / mx);
-    let out = `<line x1="0" x2="${w}" y1="${h - bot}" y2="${h - bot}" stroke="${C.line}" stroke-width="1"/>`;
+    const L = LAYERS[st.layer], S = series(), vals = S.vals;
+    const missing = (i) => st.layer === "move" && odMissing.has(months[i]);
+    const w = svg.clientWidth || 600, h = 132, top = 30, bot = 16, n = vals.length;
+    const ok = vals.filter((_, i) => !missing(i));
+    const hi = Math.max(0, ...ok) * 1.08 || 1, lo = Math.min(0, ...ok) * 1.08;
+    const y = (v) => top + (h - top - bot) * (hi - v) / ((hi - lo) || 1), y0 = y(0);
+    const bw = w / n, gap = Math.min(2, bw * 0.2);
+    const fnum = tok("--font-num");
+    let out = `<line x1="0" x2="${w}" y1="${y0}" y2="${y0}" stroke="${C.line}" stroke-width="1"/>`;
     vals.forEach((v, i) => {
-      const x = i * bw + gap / 2, bh = Math.max(1, h - bot - y(v)), on = i === st.mi;
-      const prov = D.meta.provisional.includes(months[i]);
-      if (st.layer === "move" && odMissing.has(months[i])) {
-        out += `<rect class="bar-m" data-i="${i}" x="${x + 0.5}" y="${top + 20}" width="${bw - gap - 1}" height="${h - bot - top - 20}" rx="3" fill="${C.ink}" stroke="${on ? C.flap : C.line}" stroke-dasharray="3 3"><title>${ymLabel(months[i])} · 공개 전 (지도는 ${ymLabel(lastOd)} 자료로 표시)</title></rect>`;
+      const x = i * bw + gap / 2, on = i === st.mi, bwid = Math.max(1, bw - gap);
+      if (missing(i)) {
+        out += `<rect class="bar-m" data-i="${i}" x="${x}" y="${y0 - 10}" width="${bwid}" height="20" rx="2" fill="${C.ink}" stroke="${on ? C.flap : C.line}" stroke-dasharray="3 3"><title>${ymLabel(months[i])} · 공개 전 (지도는 ${ymLabel(lastOd)} 자료로 표시)</title></rect>`;
         return;
       }
-      const est = st.layer === "move" && odEst.has(months[i]);
-      out += `<path class="bar-m" data-i="${i}" d="M${x},${h - bot} V${h - bot - bh + 4} q0,-4 4,-4 H${x + bw - gap - 4} q4,0 4,4 V${h - bot} Z" fill="${on ? L.color : mix(L.color, 0.42)}" ${prov || est ? 'fill-opacity="0.45"' : ""} ${est ? `stroke="${L.color}" stroke-dasharray="2 2" stroke-width="1"` : ""}><title>${ymLabel(months[i])} · ${metric(v, st.layer)}${prov ? " (잠정)" : ""}${est ? " (추정)" : ""}</title></path>`;
-      if (months[i].endsWith("-01")) out += `<text x="${x}" y="${h - 3}" fill="${C.muted}" font-size="10" font-family="${tok("--font-num")}">${months[i].slice(0, 4)}</text>`;
+      const prov = D.meta.provisional.includes(months[i]), est = st.layer === "move" && odEst.has(months[i]);
+      const top_ = Math.min(y(v), y0), hh = Math.max(1, Math.abs(y(v) - y0));
+      const col = v >= 0 ? C.inflow : C.outflow;
+      out += `<rect class="bar-m" data-i="${i}" x="${x}" y="${top_}" width="${bwid}" height="${hh}" rx="${Math.min(2, bwid / 2)}" fill="${col}" fill-opacity="${on ? 1 : prov || est ? 0.3 : 0.55}" ${on ? `stroke="${C.flap}" stroke-width="1.5"` : est ? `stroke="${col}" stroke-dasharray="2 2"` : ""}><title>${ymLabel(months[i])} · ${signed(v, st.layer)} (${v >= 0 ? S.pos : S.neg})${prov ? " · 잠정" : ""}${est ? " · 추정" : ""}</title></rect>`;
+      if (months[i].endsWith("-01")) out += `<text x="${x}" y="${h - 3}" fill="${C.muted}" font-size="10" font-family="${fnum}">${months[i].slice(0, 4)}</text>`;
     });
+    // 기준선: 최근 12개월 평균(평소보다 많은지 적은지)
+    const avg = vals.map((_, i) => {
+      const win = []; for (let j = i; j >= 0 && win.length < 12; j--) if (!missing(j)) win.push(vals[j]);
+      return win.length >= 3 && !missing(i) ? win.reduce((a, b) => a + b, 0) / win.length : null;
+    });
+    let path = "";
+    avg.forEach((v, i) => { if (v == null) return; path += `${path ? "L" : "M"}${(i + 0.5) * bw},${y(v)}`; });
+    if (path) out += `<path d="${path}" fill="none" stroke="${C.fg}" stroke-width="1.2" stroke-dasharray="3 3" opacity=".55"/>`;
+    // 축 눈금: 위·아래 끝 값
+    out += `<text x="2" y="${top + 9}" fill="${C.muted}" font-size="9" font-family="${fnum}">${signed(hi / 1.08, st.layer)}</text>`;
+    if (lo < 0) out += `<text x="2" y="${h - bot - 3}" fill="${C.muted}" font-size="9" font-family="${fnum}">${signed(lo / 1.08, st.layer)}</text>`;
     D.meta.events.forEach((e, ei) => {
       const i = months.indexOf(e.ym); if (i < 0) return;
       const ty = 10 + (ei % 2) * 12, label = w < 700 ? (e.short || e.label) : e.label;
@@ -1258,9 +1313,12 @@ const D = /*__DATA__*/null;
     svg.setAttribute("viewBox", `0 0 ${w} ${h}`);
     svg.innerHTML = out;
     svg.querySelectorAll(".bar-m").forEach((el) => el.addEventListener("click", () => setMonth(+el.dataset.i)));
-    $("#tl-title").innerHTML = `월별 시군구 간 <b>${L.name}</b> 규모`;
-    const prov = D.meta.provisional.includes(months[st.mi]);
-    $("#tl-month").innerHTML = `<b>${ymLabel(months[st.mi])}</b> · ${metric(vals[st.mi], st.layer)}${prov ? " · 잠정" : ""}`;
+    $("#tl-title").innerHTML = S.title;
+    const prov = D.meta.provisional.includes(months[st.mi]), a = avg[st.mi], v = vals[st.mi];
+    $("#tl-month").innerHTML = missing(st.mi) ? `<b>${ymLabel(months[st.mi])}</b> · 공개 전`
+      : `<b>${ymLabel(months[st.mi])}</b> · ${signed(v, st.layer)}${a != null ? ` <span class="muted">(12개월 평균 ${signed(a, st.layer)})</span>` : ""}${prov ? " · 잠정" : ""}`;
+    $("#tl-note").textContent = `위 막대 = ${S.pos}, 아래 막대 = ${S.neg} · 점선 = 최근 12개월 평균 · 막대를 누르면 그 달로 이동`
+      + (st.focus == null ? " · 지역을 누르면 그 지역의 순유입으로 바뀝니다" : "");
   }
 
   /* ---------- 범례 ---------- */
@@ -1445,7 +1503,28 @@ const D = /*__DATA__*/null;
     ympick.appendChild(o);
   });
   ympick.onchange = () => setMonth(+ympick.value);
+  $("#m-prev").onclick = () => setMonth(st.mi - 1);
+  $("#m-next").onclick = () => setMonth(st.mi + 1);
   function setMonth(i) { st.mi = Math.max(0, Math.min(months.length - 1, i)); drawAll(); }
+  // 보고 있는 월·흐름·지역을 주소에 담아 링크로 공유할 수 있게 한다(#m=2025-03&l=move&r=11680).
+  // 지역 상세 시트가 열려 있을 때는 시트가 쓰는 #r코드 를 건드리지 않는다.
+  function writeHash() {
+    if (!sheet.hidden) return;
+    const q = new URLSearchParams({ m: months[st.mi], l: st.layer });
+    if (st.focus != null) q.set("r", nodes[st.focus].code);
+    try { history.replaceState(null, "", "#" + q.toString()); } catch (e) {}
+  }
+  function readHash() {
+    const h = location.hash.slice(1);
+    if (!h.includes("=")) return false;
+    const q = new URLSearchParams(h), mi = months.indexOf(q.get("m")), l = q.get("l"), r = q.get("r");
+    if (mi >= 0) st.mi = mi;
+    if (l && LAYERS[l]) { st.layer = l; if (tabOf(l) === "trade") st.tmode = l; }
+    const i = r ? nodes.findIndex((n) => n.code === r) : -1;
+    st.focus = i >= 0 ? i : null;
+    regionSel.value = st.focus == null ? "" : String(st.focus);
+    return true;
+  }
   let timer = null;
   $("#play").onclick = () => {
     st.playing = !st.playing;
@@ -1463,6 +1542,12 @@ const D = /*__DATA__*/null;
   addEventListener("keydown", (e) => {
     if (e.key === "Escape" && !sheet.hidden) { closeSheet(); return; }
     if (e.key === "Escape" && st.focus != null) setFocus(null);
+    // ←/→ 로 달 이동 (입력 중이거나 상세 시트가 열려 있으면 하지 않는다)
+    const typing = /^(INPUT|SELECT|TEXTAREA)$/.test((e.target && e.target.tagName) || "");
+    if (!typing && sheet.hidden && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === "ArrowLeft") { e.preventDefault(); setMonth(st.mi - 1); }
+      if (e.key === "ArrowRight") { e.preventDefault(); setMonth(st.mi + 1); }
+    }
   });
 
   function drawAll() {
@@ -1472,14 +1557,19 @@ const D = /*__DATA__*/null;
     drawNoData();
     range.value = st.mi;
     ympick.value = st.mi;
+    $("#m-prev").disabled = st.mi <= 0;
+    $("#m-next").disabled = st.mi >= months.length - 1;
     setClock(months[st.mi]);
     drawMap(); drawKpis(); drawBoard(); drawArrivals(); drawFocus(); drawSpark(); drawLegend(); describeMap();
+    writeHash();
   }
 
   if (!D.meta.demo) { $("#demo").hidden = true; $("#demo-note").hidden = true; }
   else $("#od-real").textContent = "인구 이동만 실측 OD(실데이터 실행 시. 지금은 데모)";
+  readHash();
   layout(); drawAll();
   function openFromHash() {
+    if (readHash()) { drawAll(); return; }
     const m = /^#r(\d{5})$/.exec(location.hash);
     if (!m || !D.meta.detail) return;
     const i = nodes.findIndex((n) => n.code === m[1]);
