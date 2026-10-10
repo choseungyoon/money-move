@@ -52,7 +52,9 @@ NONCAP = "00000"
 UNMAPPED_LIMIT = 0.01  # 수도권 행 중 대응표에 없는 비율 상한
 SAMPLE_ROWS = 20000    # 체계 판별에 쓰는 최소 행 수(판별 근거가 부족하면 더 읽는다)
 DECISIVE = 1000        # 한 체계에만 있는 시도 코드가 이만큼 나오면 판별을 끝낸다
-ALIAS = {"41192": "41190", "41194": "41190", "41196": "41190"}  # 부천 구 재설치(2024), 행정안전부 체계
+# 새 구 코드 → 기존 지역(부천 2024, 화성 2026-02, 인천 2026-07). 행정안전부 체계. OD라 합쳐도 이중 계산이 없다.
+# 제물포구(28125)는 옛 중구·동구에 걸쳐 시군구 코드만으로 나눌 수 없어 에러(읍면동 코드로 나누려면 행정동 대응표 필요).
+from .molit import CODE_ALIAS as ALIAS, SPLIT  # noqa: E402
 CODES = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sgg_codes.csv")
 SCHEMES = {"mois": {"11", "28", "41"}, "kostat": {"11", "23", "31"}}  # 체계별 수도권 시도 코드
 INCHEON = {"mois": "28", "kostat": "23"}
@@ -210,6 +212,8 @@ def load(src, dst, codes_path=CODES):
                 return NONCAP
             cap_rows += 1
             c = _code5(sd, sgg)
+            if scheme == "mois" and c in SPLIT:
+                raise ValueError(f"{os.path.basename(path)}: {c}(제물포구)는 기존 지역으로 나눌 수 없습니다. mdis.py 주석 참고.")
             if c not in table:
                 unmapped[c] += 1
                 return None

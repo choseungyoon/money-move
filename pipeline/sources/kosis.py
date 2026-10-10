@@ -41,6 +41,13 @@ ITEMS = {"T10": "in_total", "T20": "out_total", "T30": "intra"}  # 총전입, �
 # 그래서 일반구 총계는 구별로 나누지 않고 시 묶음으로 쓴다(estimate_od.py). 부천(41190)은 KOSIS에도 시 하나로 나온다.
 SI_OF_GU = {c: c[:4] + "0" for c in ("41111", "41113", "41115", "41117", "41131", "41133", "41135", "41171", "41173",
                                      "41271", "41273", "41281", "41285", "41287", "41461", "41463", "41465")}
+# 인천 개편(2026-07-01): 28110 중구·28140 동구·28260 서구는 이후 달에 0으로 나오고
+# 28125 제물포구·28155 영종구·28275 서해구·28290 검단구가 새로 나온다(kosis-probe 2026-10 확인).
+# 새 구는 기존 지역으로 깔끔하게 합칠 수 없어 별칭을 두지 않는다.
+#   - 제물포구 = 옛 중구 내륙 + 옛 동구. 이 표에는 동 단위가 없어 나눌 수 없다.
+#   - 서해구 + 검단구 = 옛 서구지만, 둘 사이 이동이 전입·전출로 잡혀 더하면 이중 계산되고 시군구 내 이동은 빠진다
+#     (2026-06 서구 시군구내 3,044 → 2026-07 서해+검단 2,314).
+# 대신 총전입·총전출이 모두 0인 지역(폐지 코드)이 나오면 에러를 낸다. 0을 그대로 쓰면 IPF가 그 지역 이동을 0으로 맞춘다.
 MARGIN_COLS = ["ym", "code", "in_total", "out_total", "intra"]
 
 
@@ -78,6 +85,10 @@ def margins(api_key, start, end, codes, getter=http_get, chunk=6):
     acc = {}
     for (ym, raw, field), v in seen.items():
         acc.setdefault((ym, raw), {"in_total": 0, "out_total": 0, "intra": 0})[field] = v
+    dead = sorted(k for k, v in acc.items() if v["in_total"] == v["out_total"] == 0)
+    if dead:
+        raise RuntimeError(f"KOSIS 총전입·총전출이 0인 시군구(폐지된 코드): {dead[:6]}{' 외' if len(dead) > 6 else ''}. "
+                           "행정구역 개편으로 새 코드로 바뀐 지역입니다. kosis.py의 인천 개편 주석을 보고 처리 방법을 정하세요.")
     rows = [[ym, c, v["in_total"], v["out_total"], v["intra"]] for (ym, c), v in sorted(acc.items())]
     got = {c for _, c in acc}
     missing = sorted(c for c in codes if SI_OF_GU.get(c, c) not in got)

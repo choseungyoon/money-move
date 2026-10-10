@@ -65,6 +65,31 @@ class MolitTest(unittest.TestCase):
         self.assertEqual(rows[("2025-03", "41190")]["trades"], "4")  # 41192 2페이지(3건) + 41194(1건)
         self.assertNotIn(("2025-03", "41192"), rows)
 
+    def test_fetch_merges_2026_reform_codes(self):
+        """국토부 API는 과거 달도 새 코드로만 준다(옛 코드는 0건, molit-probe 2026-10). 새 코드를 기존 지역으로 합친다."""
+        routes = {
+            ("AptTrade", "41591", 1): xml([{"dealAmount": "40,000"}] * 2),           # 화성 만세구
+            ("AptTrade", "41597", 1): xml([{"dealAmount": "60,000"}]),               # 화성 동탄구
+            ("AptTrade", "28155", 1): xml([{"dealAmount": "30,000", "umdNm": "운서동"}]),  # 영종구 → 중구
+            ("AptTrade", "28125", 1): xml([{"dealAmount": "20,000", "umdNm": "송림동"}] * 3   # 제물포구 옛 동구 동
+                                          + [{"dealAmount": "20,000", "umdNm": "신흥동3가"}]),  # 제물포구 옛 중구 동
+            ("AptTrade", "28275", 1): xml([{"dealAmount": "50,000"}]),               # 서해구 → 서구
+            ("AptTrade", "28290", 1): xml([{"dealAmount": "50,000"}] * 2),           # 검단구 → 서구
+        }
+        with tempfile.TemporaryDirectory() as d:
+            client = molit.Client("KEY", cache_dir=os.path.join(d, "cache"), getter=FakeGetter(routes))
+            molit.fetch(client, ["41590", "28110", "28140", "28260"], ["2026-08"], d)
+            with open(os.path.join(d, "trade_region_month.csv"), encoding="utf-8") as f:
+                trades = {r["code"]: r["trades"] for r in csv.DictReader(f)}
+            with open(os.path.join(d, "complexes.csv"), encoding="utf-8") as f:
+                umd = {r["umd"]: r["code"] for r in csv.DictReader(f)}
+        self.assertEqual(trades, {"41590": "3", "28110": "2", "28140": "3", "28260": "3"})
+        self.assertEqual((umd["송림동"], umd["신흥동3가"]), ("28140", "28110"))
+
+    def test_unknown_dong_in_split_code_raises(self):
+        with self.assertRaises(ValueError):
+            molit.region_of("28125", {"umdNm": "운서동"})  # 영종 동이 제물포구로 오면 나눌 근거가 없다
+
     def test_cache_reused_except_forced_months(self):
         with tempfile.TemporaryDirectory() as d:
             g = FakeGetter({("AptTrade", "11110", 1): xml([{"dealAmount": "10,000"}])})

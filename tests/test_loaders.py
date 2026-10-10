@@ -41,6 +41,23 @@ class MdisTest(unittest.TestCase):
                 rows = {(r["src"], r["dst"]): int(r["persons"]) for r in csv.DictReader(f)}
         self.assertEqual(rows, {("11680", "41135"): 2, ("00000", "11680"): 1, ("11500", "41190"): 1})
 
+    def test_2026_reform_codes_merged_and_jemulpo_raises(self):
+        header = ["전입연도", "전입월", "전입행정기관코드_시도", "전입행정기관코드_시군구", "전출행정기관코드_시도", "전출행정기관코드_시군구", "전입사유코드"]
+        with tempfile.TemporaryDirectory() as d:
+            def run(rows):
+                with open(os.path.join(d, "2026.csv"), "w", encoding="cp949", newline="") as f:
+                    w = csv.writer(f); w.writerow(header); w.writerows(rows)
+                dst = os.path.join(d, "od.csv")
+                mdis.load(os.path.join(d, "*.csv"), dst)
+                with open(dst, encoding="utf-8") as f:
+                    return {(r["src"], r["dst"]): int(r["persons"]) for r in csv.DictReader(f)}
+            rows = run([["2026", "8", "41", "597", "11", "680", "3"],    # 강남 → 동탄구: 화성
+                        ["2026", "8", "28", "290", "28", "275", "3"],    # 서해구 → 검단구: 옛 서구 안 이동
+                        ["2026", "8", "28", "155", "41", "591", "3"]])   # 만세구 → 영종구: 화성 → 중구
+            self.assertEqual(rows, {("11680", "41590"): 1, ("28260", "28260"): 1, ("41590", "28110"): 1})
+            with self.assertRaises(ValueError):
+                run([["2026", "8", "28", "125", "11", "680", "3"]])     # 제물포구: 중구·동구로 나눌 수 없음
+
 
 # 2021~22년 설명서 기준 머리글(행정구역 = 통계청 체계일 수 있음)
 HEADER_2022 = ["전입연도", "전입월", "전입행정구역_시도코드", "전입행정구역_시군구코드", "전출행정구역_시도코드", "전출행정구역_시군구코드", "전입사유코드",
