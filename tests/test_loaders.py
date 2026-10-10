@@ -42,11 +42,10 @@ class MdisTest(unittest.TestCase):
         self.assertEqual(rows, {("11680", "41135"): 2, ("00000", "11680"): 1, ("11500", "41190"): 1})
 
     def test_2026_reform_codes_merged_and_jemulpo_raises(self):
-        header = ["전입연도", "전입월", "전입행정기관코드_시도", "전입행정기관코드_시군구", "전출행정기관코드_시도", "전출행정기관코드_시군구", "전입사유코드"]
         with tempfile.TemporaryDirectory() as d:
             def run(rows):
                 with open(os.path.join(d, "2026.csv"), "w", encoding="cp949", newline="") as f:
-                    w = csv.writer(f); w.writerow(header); w.writerows(rows)
+                    w = csv.writer(f); w.writerow(HEADER_2022); w.writerows([r + ["00001", "00002"] for r in rows])
                 dst = os.path.join(d, "od.csv")
                 mdis.load(os.path.join(d, "*.csv"), dst)
                 with open(dst, encoding="utf-8") as f:
