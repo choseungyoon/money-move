@@ -74,6 +74,13 @@ class MdisSchemeTest(unittest.TestCase):
     def test_unknown_capital_codes_fail_loudly(self):
         with tempfile.TemporaryDirectory() as d:
             with self.assertRaises(ValueError):
+                # 인천 23010(통계청에만 있는 시도 23)으로 체계는 분명하고, 경기 31999는 대응표에 없다
+                self.write(d, [["2026", "5", "31", "999", "11", "230", "3"]] * 5 + [["2026", "5", "23", "010", "11", "230", "3"]])
+
+    def test_undecidable_scheme_fails(self):
+        # 11230은 두 체계에 다 있다(강남/동대문). 31은 경기/울산. 근거가 없으면 추측하지 않는다
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError, "판별할 수 없"):
                 self.write(d, [["2026", "5", "31", "999", "11", "230", "3"]] * 5)
 
 
@@ -173,6 +180,37 @@ class MdisSampleFormatTest(unittest.TestCase):
             od = self.od(d)
         self.assertEqual(od[("2025-09", "11680", "41135")][0], k)
         self.assertEqual((od[("2025-09", "00000", "28110")][0], od[("2025-09", "28110", "00000")][0]), (1, 1))
+
+
+class MdisNationwideSchemeTest(unittest.TestCase):
+    """전국 파일: 시도 31은 행정안전부에선 울산, 통계청에선 경기. 31만 보고 통계청으로 판별하면 서울 코드가 전부 안 맞는다."""
+    def load(self, d, rows):
+        with open(os.path.join(d, "2023.csv"), "w", encoding="cp949", newline="") as f:
+            w = csv.writer(f); w.writerow(HEADER_2025); w.writerows(rows)
+        rep = mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))["2023.csv"]
+        with open(os.path.join(d, "od.csv"), encoding="utf-8") as f:
+            return rep, {(r["src"], r["dst"]): int(r["households_all"]) for r in csv.DictReader(f)}
+
+    def test_mois_with_ulsan_rows(self):
+        rows = [hh("31110", "11620")] * 50 + [hh("11710", "11620")] * 30 + [hh("28177", "41135")] * 5 + [hh("46110", "11710")]
+        with tempfile.TemporaryDirectory() as d:
+            rep, od = self.load(d, rows)
+        self.assertEqual(rep["scheme"], "mois")
+        self.assertEqual(od, {("11620", "00000"): 50, ("11620", "11710"): 30, ("41135", "28177"): 5, ("11710", "00000"): 1})
+
+    def test_kostat_with_ulsan_26_and_busan_21(self):
+        # 통계청: 26 울산, 21 부산, 31 경기(31023 분당), 11230 강남
+        rows = [hh("26310", "11230")] * 20 + [hh("31023", "11230")] * 10 + [hh("11230", "21010")] * 3
+        with tempfile.TemporaryDirectory() as d:
+            rep, od = self.load(d, rows)
+        self.assertEqual(rep["scheme"], "kostat")
+        self.assertEqual(od, {("11680", "00000"): 20, ("11680", "41135"): 10, ("00000", "11680"): 3})
+
+    def test_mixed_schemes_fail(self):
+        rows = [hh("41135", "11680")] * 50 + [hh("23010", "11680")] * 50
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError, "섞여"):
+                self.load(d, rows)
 
 
 class MdisAggregateTest(unittest.TestCase):

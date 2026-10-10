@@ -21,6 +21,7 @@ FIELDS의 후보 중 파일 머리글에 있는 것을 쓴다. 주택 사유 코
   통계청 체계와 행정안전부 체계는 시도부터 다르다: 인천 23/28, 경기 31/41.
   11110·11140·11170·11200·11230은 두 체계에 모두 있지만 가리키는 구가 다르다.
   연도마다 체계가 다를 수 있어 '파일마다' 판별하고, 통계청 코드면 data/sgg_codes.csv로 바꾼다.
+  시도 코드 31은 통계청에선 경기, 행정안전부에선 울산이다. 전국 파일에서는 한 체계에만 있는 코드(ONLY)로만 판별한다.
   대응표에 없는 수도권 코드가 UNMAPPED_LIMIT를 넘으면 조용히 버리지 않고 에러를 낸다.
 
 출력: data/interim/migration_od_month.csv  ym,src,dst,persons,persons_all,households,households_all
@@ -39,14 +40,19 @@ FIELDS = {
     "persons": ["이동_총인구", "이동_총인구수", "이동인구_계"],  # 없으면 세대 1행 = 1명으로 센다
 }
 REQUIRED = ("y", "m", "to_sd", "to_sgg", "fr_sd", "fr_sgg", "reason")
-HOUSING_REASON = {"3"}  # 1직업 2가족 3주택 4교육 5주거환경 6자연환경 9기타 (샘플 분포로 추정, 코드집 확인 필요)
+HOUSING_REASON = {"3"}  # 1직업 2가족 3주택 4교육 5주거환경 6자연환경 9기타 (MDIS 코드표 확인, 2023 전국 주택 31%)
 NONCAP = "00000"
 UNMAPPED_LIMIT = 0.01  # 수도권 행 중 대응표에 없는 비율 상한
-SAMPLE_ROWS = 20000    # 체계 판별에 쓰는 앞부분 행 수
+SAMPLE_ROWS = 20000    # 체계 판별에 쓰는 최소 행 수(판별 근거가 부족하면 더 읽는다)
+DECISIVE = 1000        # 한 체계에만 있는 시도 코드가 이만큼 나오면 판별을 끝낸다
 ALIAS = {"41192": "41190", "41194": "41190", "41196": "41190"}  # 부천 구 재설치(2024), 행정안전부 체계
 CODES = os.path.join(os.path.dirname(__file__), "..", "..", "data", "sgg_codes.csv")
 SCHEMES = {"mois": {"11", "28", "41"}, "kostat": {"11", "23", "31"}}  # 체계별 수도권 시도 코드
 INCHEON = {"mois": "28", "kostat": "23"}
+# 판별 근거는 한 체계에만 있는 시도 코드뿐이다. 11·26·29·31·36은 두 체계에 다 있지만 뜻이 다르다
+# (31 = 통계청 경기 / 행정안전부 울산, 26 = 부산/울산, 29 = 세종/광주, 36 = 전남/세종).
+ONLY = {"kostat": {"21", "22", "23", "24", "25", "32", "33", "34", "35", "37", "38", "39"},
+        "mois": {"27", "28", "30", "41", "42", "43", "44", "45", "46", "47", "48", "50", "51", "52"}}
 CHECK_MIN_ROWS = 1000  # 이보다 적은 해는 추출 조건 점검을 하지 않는다(테스트·일부 파일)
 # 세대관련연간자료 2023~25 레이아웃(Format_PROC…942747.xls): 항목명, 길이. 시군구는 3자리, 읍면동은 5자리.
 LAYOUT = [("전입행정기관코드_시도", 2), ("전입행정기관코드_시군구", 3), ("전입행정기관코드_읍면동", 5),
@@ -132,19 +138,28 @@ def rows_of(path, limit=None):
 
 
 def detect_scheme(path, codes):
-    """시도 코드 23/31이 있으면 통계청, 28/41이면 행정안전부. 서울만 있으면 대응표에 맞는 행이 많은 쪽."""
-    sidos, hits = Counter(), Counter()
-    for c, r in rows_of(path, SAMPLE_ROWS):
+    """한 체계에만 있는 시도 코드(ONLY)가 많은 쪽. 그런 코드가 없으면(서울만 등) 대응표에 맞는 행이 많은 쪽.
+    반환: (체계, 근거 {체계: 행 수})"""
+    marks, hits = Counter(), Counter()
+    for n, (c, r) in enumerate(rows_of(path)):
         for sd, sgg in ((r[c["fr_sd"]], r[c["fr_sgg"]]), (r[c["to_sd"]], r[c["to_sgg"]])):
-            sd = sd.strip(); sidos[sd] += 1
+            sd = sd.strip()
             code = _code5(sd, sgg)
             for name in SCHEMES:
+                marks[name] += sd in ONLY[name]
                 hits[name] += code in codes[name]
-    if sidos["23"] or sidos["31"]:
-        return "kostat"
-    if sidos["28"] or sidos["41"]:
-        return "mois"
-    return max(SCHEMES, key=lambda s: hits[s])
+        if n >= SAMPLE_ROWS and max(marks.values(), default=0) >= DECISIVE:
+            break
+    if max(marks.values(), default=0) > 0:
+        major, minor = sorted(SCHEMES, key=lambda s: -marks[s])
+        if marks[minor] > 0.01 * marks[major]:
+            raise ValueError(f"{os.path.basename(path)}: 시도 코드에 통계청 체계({marks['kostat']}건)와 행정안전부 체계"
+                             f"({marks['mois']}건)가 섞여 있습니다. 한 파일에는 한 체계만 있어야 합니다.")
+        return major, dict(marks)
+    if hits["mois"] == hits["kostat"]:
+        raise ValueError(f"{os.path.basename(path)}: 코드 체계를 판별할 수 없습니다(양쪽 대응표에 맞는 행 {hits['mois']}건으로 같음). "
+                         "한 체계에만 있는 시도 코드(예: 인천 23/28, 경기 31/41)가 있는 파일인지 확인하세요.")
+    return max(SCHEMES, key=lambda s: hits[s]), {"hits": dict(hits)}
 
 
 def load(src, dst, codes_path=CODES):
@@ -157,7 +172,7 @@ def load(src, dst, codes_path=CODES):
     years = defaultdict(Counter)  # 추출 조건 점검: 행 수, 인천, 비수도권에서 출발, 비수도권으로 도착
     report = {}
     for path in paths:
-        scheme = detect_scheme(path, codes)
+        scheme, evidence = detect_scheme(path, codes)
         table, capital = codes[scheme], SCHEMES[scheme]
         cap_rows, unmapped = 0, Counter()
 
@@ -192,9 +207,9 @@ def load(src, dst, codes_path=CODES):
             if housing:
                 x[0] += people; x[2] += 1
         if cap_rows and sum(unmapped.values()) / cap_rows > UNMAPPED_LIMIT:
-            raise ValueError(f"{os.path.basename(path)}: {scheme} 체계로 읽었지만 수도권 코드 {sum(unmapped.values())}/{cap_rows}건이 "
+            raise ValueError(f"{os.path.basename(path)}: {scheme} 체계(근거 {evidence})로 읽었지만 수도권 코드 {sum(unmapped.values())}/{cap_rows}건이 "
                              f"대응표에 없습니다: {unmapped.most_common(5)}. data/sgg_codes.csv 또는 ALIAS를 확인하세요.")
-        report[os.path.basename(path)] = {"scheme": scheme, "rows": nrows, "unmapped": dict(unmapped.most_common(3))}
+        report[os.path.basename(path)] = {"scheme": scheme, "evidence": evidence, "rows": nrows, "unmapped": dict(unmapped.most_common(3))}
     for y, yc in sorted(years.items()):
         lack = [label for k, label in (("incheon", "인천"), ("from_outside", "비수도권→수도권"), ("to_outside", "수도권→비수도권"))
                 if not yc[k]]
