@@ -1,24 +1,81 @@
 """부동산원·MDIS 로더: 실제 배포 형식(CP949, 한글 헤더)으로 검증한다."""
-import csv, os, sys, tempfile, unittest
+import csv, json, os, sys, tempfile, unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "pipeline"))
 from sources import mdis, reb  # noqa: E402
 
 
+# R-ONE 실제 파일 머리글(2026-10 확인): 기간이 열로 펼쳐진 와이드 형식
+REB_HEAD = ["No", "지역", "지역", "지역", "매입자거주지", "항목", "단위", "통계자료", "2025년 3월", "2025년 4월"]
+
+
+def reb_row(n, sido, sgg, gu, bucket, item, v1, v2):
+    return [str(n), sido, sgg, gu, bucket, item, "동(호)수" if item == "동(호)수" else "천㎡", "원자료", v1, v2]
+
+
 class RebTest(unittest.TestCase):
-    def test_counts_become_shares_and_period_normalized(self):
+    """와이드 형식 → 월별 비중. 지역 코드가 없어 시도·시군구·일반구 이름으로 맞춘다."""
+    GEO = {"regions": [{"code": "11680", "name": "강남구"}, {"code": "41111", "name": "수원시장안구"},
+                       {"code": "28110", "name": "중구"}, {"code": "28720", "name": "옹진군"}]}
+
+    def write(self, d, rows, geo=None):
+        src, dst = os.path.join(d, "in.csv"), os.path.join(d, "out.csv")
+        with open(src, "w", encoding="cp949", newline="") as f:
+            w = csv.writer(f); w.writerow(REB_HEAD); w.writerows(rows)
+        gp = os.path.join(d, "geo.json")
+        with open(gp, "w", encoding="utf-8") as f:
+            json.dump(geo or self.GEO, f, ensure_ascii=False)
+        info = reb.load(src, dst, gp)
+        with open(dst, encoding="utf-8") as f:
+            return info, {(r["ym"], r["code"]): r for r in csv.DictReader(f)}
+
+    def rows(self):
+        out, n = [], 0
+        # 강남구: 쉼표가 든 값, 면적 행은 버려야 한다
+        for b, a, c in (("관할시군구내", '1,000', "40"), ("관할시도내", "500", "40"),
+                        ("관할시도외_서울", "0", "0"), ("관할시도외_기타", "500", "20")):
+            n += 1; out.append(reb_row(n, "서울", "강남구", "강남구", b, "동(호)수", a, c))
+            n += 1; out.append(reb_row(n, "서울", "강남구", "강남구", b, "면적", "99", "99"))
+        # 수원시 장안구: 일반구는 (시도, 시, 구)
+        for b, a in (("관할시군구내", "10"), ("관할시도내", "10"), ("관할시도외_서울", "20"), ("관할시도외_기타", "0")):
+            n += 1; out.append(reb_row(n, "경기", "수원시", "장안구", b, "동(호)수", a, "-"))
+        # 인천 중구: 2026-07 개편으로 폐지돼 '(구)중구'로 나오고, 둘째 달은 자료가 없다
+        for b, a in (("관할시군구내", "5"), ("관할시도내", "5"), ("관할시도외_서울", "0"), ("관할시도외_기타", "0")):
+            n += 1; out.append(reb_row(n, "인천", "(구)중구", "(구)중구", b, "동(호)수", a, "-"))
+        # 옹진군: 행은 있지만 거래가 없다
+        for b in ("관할시군구내", "관할시도내", "관할시도외_서울", "관할시도외_기타"):
+            n += 1; out.append(reb_row(n, "인천", "옹진군", "옹진군", b, "동(호)수", "-", "0"))
+        return out
+
+    def test_wide_to_shares_names_to_codes_and_gaps(self):
         with tempfile.TemporaryDirectory() as d:
-            src, dst = os.path.join(d, "in.csv"), os.path.join(d, "out.csv")
-            with open(src, "w", encoding="utf-8-sig", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["기간", "지역코드", "관할시군구내", "관할시도내", "관할시도외_서울", "관할시도외_기타"])
-                w.writerow(["202503", "4113500000", 50, 20, 25, 5])
-                w.writerow(["2025.04", "11680", 40, 40, 0, 20])
-            reb.load(src, dst)
-            with open(dst, encoding="utf-8") as f:
-                rows = list(csv.DictReader(f))
-        self.assertEqual((rows[0]["ym"], rows[0]["code"], rows[0]["seoul"]), ("2025-03", "41135", "0.25"))
-        self.assertEqual(rows[1]["ym"], "2025-04")
+            info, got = self.write(d, self.rows())
+        self.assertEqual(info["months"], ["2025-03", "2025-04"])
+        # 쉼표 값이 비중이 되고 면적 행은 섞이지 않는다
+        r = got[("2025-03", "11680")]
+        self.assertEqual([r[k] for k in ("same_sgg", "same_sido", "seoul", "other")], ["0.5", "0.25", "0.0", "0.25"])
+        self.assertEqual(got[("2025-04", "11680")]["same_sgg"], "0.4")
+        # 일반구와 폐지된 구('(구)' 접두어)도 우리 코드로 맞춰진다
+        self.assertEqual(got[("2025-03", "41111")]["seoul"], "0.5")
+        self.assertEqual(got[("2025-03", "28110")]["same_sgg"], "0.5")
+        # 자료가 없는 달은 0으로 채우지 않고 빼고, 어디가 비었는지 알린다
+        self.assertNotIn(("2025-04", "41111"), got)
+        self.assertEqual(info["gaps"], {"41111": ["2025-04"], "28110": ["2025-04"]})
+        self.assertEqual(info["empty"], ["28720"])   # 전 기간 거래 0
+
+    def test_unmapped_region_fails_loudly(self):
+        """이름이 표와 다르면(또는 추출 범위에 빠졌으면) 조용히 지나가지 않는다."""
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError, "찾지 못했습니다"):
+                self.write(d, self.rows(), geo={"regions": [{"code": "11110", "name": "종로구"}]})
+
+    def test_missing_period_columns_explained(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(ValueError, "기간 열"):
+                src = os.path.join(d, "in.csv")
+                with open(src, "w", encoding="cp949", newline="") as f:
+                    csv.writer(f).writerow(["No", "지역", "지역", "지역", "매입자거주지", "항목", "단위", "통계자료", "3월"])
+                reb.load(src, os.path.join(d, "out.csv"), os.path.join(d, "geo.json"))
 
 
 class MdisTest(unittest.TestCase):
