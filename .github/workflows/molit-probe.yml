@@ -1,0 +1,17 @@
+name: molit-probe
+# 국토부 실거래 API 인증키·응답 진단(수동 실행). 결과는 실행 주석(annotations)으로 남는다.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - env:
+          MOLIT_KEY: ${{ secrets.MOLIT_KEY }}
+        run: python pipeline/molit_probe.py
