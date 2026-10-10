@@ -3,6 +3,11 @@
 시군구→시군구 OD는 MDIS 마이크로데이터에만 있다. 연 단위로 공개되고 공개가 1년 이상 늦다.
 연도별 CSV(항목명 포함)를 data/raw/mdis/ 에 둔다.
 
+집계 대상 (KOSIS 총계와 맞추는 조건)
+  국내인구이동통계는 읍면동 경계를 넘는 이동만 센다. 전입신고 원자료에는 같은 동 안 이사도 들어 있어
+  그대로 세면 시군구 내 이동(대각선)이 1.9배가 된다. 전입·전출의 시도·시군구·읍면동이 모두 같은 행은 뺀다.
+  부천 41192/41194/41196 은 ALIAS 로 41190 이 되고 구마다 읍면동 코드가 겹치므로, 합치기 전 코드로 비교한다.
+
 세대관련 자료는 한 행이 이사한 세대 1개다. '이동_총인구'(이사한 세대원 수)가 있으면 사람 수도 구한다.
   persons            주택 사유 사람 수 (흐름 화면의 인구 이동)
   persons_all        전체 사유 사람 수 (KOSIS 월별 총계로 2026년 이후를 추정할 때 기준 패턴)
@@ -36,10 +41,12 @@ FIELDS = {
     "to_sgg": ["전입행정기관코드_시군구", "전입행정구역_시군구코드", "전입행정_시군구", "전입행정_시군구코드"],
     "fr_sd": ["전출행정기관코드_시도", "전출행정구역_시도코드", "전출행정_시도", "전출행정_시도코드"],
     "fr_sgg": ["전출행정기관코드_시군구", "전출행정구역_시군구코드", "전출행정_시군구", "전출행정_시군구코드"],
+    "to_emd": ["전입행정기관코드_읍면동", "전입행정구역_읍면동코드", "전입행정_읍면동", "전입행정_읍면동코드"],
+    "fr_emd": ["전출행정기관코드_읍면동", "전출행정구역_읍면동코드", "전출행정_읍면동", "전출행정_읍면동코드"],
     "reason": ["전입사유코드", "전입사유"],
     "persons": ["이동_총인구", "이동_총인구수", "이동인구_계"],  # 없으면 세대 1행 = 1명으로 센다
 }
-REQUIRED = ("y", "m", "to_sd", "to_sgg", "fr_sd", "fr_sgg", "reason")
+REQUIRED = ("y", "m", "to_sd", "to_sgg", "to_emd", "fr_sd", "fr_sgg", "fr_emd", "reason")
 HOUSING_REASON = {"3"}  # 1직업 2가족 3주택 4교육 5주거환경 6자연환경 9기타 (MDIS 코드표 확인, 2023 전국 주택 31%)
 NONCAP = "00000"
 UNMAPPED_LIMIT = 0.01  # 수도권 행 중 대응표에 없는 비율 상한
@@ -217,6 +224,8 @@ def load(src, dst, codes_path=CODES):
             yc["incheon"] += INCHEON[scheme] in (fr_sd, to_sd)
             yc["from_outside"] += fr_sd not in capital
             yc["to_outside"] += to_sd not in capital
+            if (fr_sd, r[c["fr_sgg"]].strip(), r[c["fr_emd"]].strip()) == (to_sd, r[c["to_sgg"]].strip(), r[c["to_emd"]].strip()):
+                continue  # 같은 읍면동 안 이사: 인구이동통계 집계 대상이 아니다. ALIAS 로 합치기 전 코드로 비교한다
             a, b = to_code(fr_sd, r[c["fr_sgg"]]), to_code(to_sd, r[c["to_sgg"]])
             if a is None or b is None or a == b == NONCAP:
                 continue

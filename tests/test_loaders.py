@@ -26,14 +26,15 @@ class MdisTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "2025.csv"), "w", encoding="cp949", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["전입연도", "전입월", "전입행정기관코드_시도", "전입행정기관코드_시군구", "전출행정기관코드_시도", "전출행정기관코드_시군구", "전입사유코드"])
-                y, m = "2025", "3"
-                w.writerow([y, m, "41", "135", "11", "680", "3"])   # 강남 → 분당, 주택
-                w.writerow([y, m, "41", "135", "11", "680", "3"])
-                w.writerow([y, m, "41", "135", "11", "680", "1"])   # 직업 사유: 제외
-                w.writerow([y, m, "11", "680", "26", "350", "3"])   # 부산 → 강남: 비수도권 00000
-                w.writerow([y, m, "41", "192", "11", "500", "3"])   # 부천 원미구 → 41190
-                w.writerow([y, m, "26", "350", "48", "121", "3"])   # 지방 → 지방: 제외
+                w.writerow(["전입연도", "전입월", "전입행정기관코드_시도", "전입행정기관코드_시군구", "전입행정기관코드_읍면동",
+                            "전출행정기관코드_시도", "전출행정기관코드_시군구", "전출행정기관코드_읍면동", "전입사유코드"])
+                y, m, e = "2025", "3", ["00001", "00002"]
+                w.writerow([y, m, "41", "135", e[0], "11", "680", e[1], "3"])   # 강남 → 분당, 주택
+                w.writerow([y, m, "41", "135", e[0], "11", "680", e[1], "3"])
+                w.writerow([y, m, "41", "135", e[0], "11", "680", e[1], "1"])   # 직업 사유: 제외
+                w.writerow([y, m, "11", "680", e[0], "26", "350", e[1], "3"])   # 부산 → 강남: 비수도권 00000
+                w.writerow([y, m, "41", "192", e[0], "11", "500", e[1], "3"])   # 부천 원미구 → 41190
+                w.writerow([y, m, "26", "350", e[0], "48", "121", e[1], "3"])   # 지방 → 지방: 제외
             dst = os.path.join(d, "od.csv")
             mdis.load(os.path.join(d, "*.csv"), dst)
             with open(dst, encoding="utf-8") as f:
@@ -42,14 +43,15 @@ class MdisTest(unittest.TestCase):
 
 
 # 2021~22년 설명서 기준 머리글(행정구역 = 통계청 체계일 수 있음)
-HEADER_2022 = ["전입연도", "전입월", "전입행정구역_시도코드", "전입행정구역_시군구코드", "전출행정구역_시도코드", "전출행정구역_시군구코드", "전입사유코드"]
+HEADER_2022 = ["전입연도", "전입월", "전입행정구역_시도코드", "전입행정구역_시군구코드", "전출행정구역_시도코드", "전출행정구역_시군구코드", "전입사유코드",
+               "전입행정구역_읍면동코드", "전출행정구역_읍면동코드"]
 
 
 class MdisSchemeTest(unittest.TestCase):
     """통계청 코드(인천 23, 경기 31)와 행정안전부 코드(28, 41)를 판별해 같은 결과로 만든다."""
     def write(self, d, rows):
         with open(os.path.join(d, "x.csv"), "w", encoding="cp949", newline="") as f:
-            w = csv.writer(f); w.writerow(HEADER_2022); w.writerows(rows)
+            w = csv.writer(f); w.writerow(HEADER_2022); w.writerows([r + ["00001", "00002"] for r in rows])
         dst = os.path.join(d, "od.csv")
         info = mdis.load(os.path.join(d, "*.csv"), dst)["x.csv"]
         with open(dst, encoding="utf-8") as f:
@@ -90,12 +92,13 @@ class MdisFileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "2022.csv"), "w", encoding="cp949", newline="") as f:
                 w = csv.writer(f); w.writerow(HEADER_2022)
-                w.writerow(["2022", "3", "31", "023", "11", "230", "3"])     # 통계청: 강남 → 분당
+                w.writerow(["2022", "3", "31", "023", "11", "230", "3", "00001", "00002"])  # 통계청: 강남 → 분당
             with open(os.path.join(d, "2025.csv"), "w", encoding="utf-8", newline="") as f:
                 w = csv.writer(f)
-                w.writerow(["전입행정기관코드_시도", "전입행정기관코드_시군구", "전입연도", "전입월", "전출행정기관코드_시도", "전출행정기관코드_시군구", "전입사유코드", "이동_총인구"])
-                w.writerow(["41", "135", "2025", "3", "11", "680", "3", "4"])  # 행정안전부: 강남 → 분당, 4인 세대
-                w.writerow(["41", "135", "2025", "3", "11", "680", "1", "1"])  # 직업 사유
+                w.writerow(["전입행정기관코드_시도", "전입행정기관코드_시군구", "전입행정기관코드_읍면동", "전입연도", "전입월",
+                            "전출행정기관코드_시도", "전출행정기관코드_시군구", "전출행정기관코드_읍면동", "전입사유코드", "이동_총인구"])
+                w.writerow(["41", "135", "00001", "2025", "3", "11", "680", "00002", "3", "4"])  # 행정안전부: 강남 → 분당, 4인 세대
+                w.writerow(["41", "135", "00001", "2025", "3", "11", "680", "00002", "1", "1"])  # 직업 사유
             dst = os.path.join(d, "od.csv")
             rep = mdis.load(os.path.join(d, "*.csv"), dst)
             with open(dst, encoding="utf-8") as f:
@@ -119,10 +122,11 @@ HEADER_2025 = ["전입행정기관코드_시도", "전입행정기관코드_시�
                "세대주만연령", "세대주성별코드", "세대관련코드", "이동_총인구수", "이동_남자인구수", "이동_여자인구수"]
 
 
-def hh(to_sgg, fr_sgg, reason="3", n=1, ym="2025-09"):
-    """세대 1행. 시군구는 샘플처럼 5자리 행정안전부 코드."""
+def hh(to_sgg, fr_sgg, reason="3", n=1, ym="2025-09", emd=None):
+    """세대 1행. 시군구는 샘플처럼 5자리 행정안전부 코드. emd=(전입, 전출) 읍면동 코드."""
     y, m = ym.split("-")
-    return [to_sgg[:2], to_sgg, to_sgg + "00000", y, m, "15", fr_sgg[:2], fr_sgg, fr_sgg + "00000", reason, "1", "040", "1", "2", str(n), "0", str(n)]
+    to_emd, fr_emd = emd or (to_sgg + "00000", fr_sgg + "00000")
+    return [to_sgg[:2], to_sgg, to_emd, y, m, "15", fr_sgg[:2], fr_sgg, fr_emd, reason, "1", "040", "1", "2", str(n), "0", str(n)]
 
 
 class MdisSampleFormatTest(unittest.TestCase):
@@ -134,14 +138,15 @@ class MdisSampleFormatTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             with open(os.path.join(d, "2025.csv"), "w", encoding="cp949", newline="") as f:
                 w = csv.writer(f); w.writerow(HEADER_2025)
-                w.writerow(hh("41150", "41150", "3", 1))   # 의정부 시군구 내
+                w.writerow(hh("41150", "41150", "3", 1))   # 의정부 시군구 내, 같은 동(읍면동까지 같다): 집계 제외
+                w.writerow(hh("41150", "41150", "3", 2, emd=("41150" + "00000", "41150" + "00200")))  # 의정부 동 간 이동
                 w.writerow(hh("41135", "11680", "3", 4))   # 강남 → 분당 4인
                 w.writerow(hh("41135", "11680", "2", 2))   # 가족 사유
                 w.writerow([""] * len(HEADER_2025))        # 엑셀 저장 파일 끝의 빈 행
             rep = mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))
             od = self.od(d)
-        self.assertEqual(rep["2025.csv"]["rows"], 3)
-        self.assertEqual(od, {("2025-09", "41150", "41150"): (1, 1, 1), ("2025-09", "11680", "41135"): (4, 6, 1)})
+        self.assertEqual(rep["2025.csv"]["rows"], 4)
+        self.assertEqual(od, {("2025-09", "41150", "41150"): (2, 2, 1), ("2025-09", "11680", "41135"): (4, 6, 1)})
 
     def test_fixed_width_text_same_as_csv(self):
         rows = [hh("41135", "11680", "3", 4), hh("28110", "26350", "3", 2)]
@@ -157,6 +162,19 @@ class MdisSampleFormatTest(unittest.TestCase):
             mdis.load([os.path.join(d, "b.txt")], os.path.join(d, "od.csv")); b = self.od(d)
         self.assertEqual(a, b)
         self.assertEqual(a[("2025-09", "00000", "28110")], (2, 2, 1))
+
+    def test_bucheon_cross_gu_kept_even_when_emd_code_repeats(self):
+        """부천 41192/41194 는 ALIAS 로 둘 다 41190 이 된다. 구별로 읍면동 코드가 겹쳐도 같은 동 이사로 보면 안 된다."""
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "2025.csv"), "w", encoding="utf-8", newline="") as f:
+                w = csv.writer(f); w.writerow(HEADER_2025)
+                w.writerow(hh("41192", "41194", "3", 3, emd=("00100", "00100")))  # 구가 다르다: 남는다
+                w.writerow(hh("41192", "41192", "3", 9, emd=("00100", "00100")))  # 같은 구·같은 동: 빠진다
+                w.writerow(hh("28110", "26350"))                                   # 체계 판별·추출 조건용
+                w.writerow(hh("26350", "28110"))
+            mdis.load(os.path.join(d, "*.csv"), os.path.join(d, "od.csv"))
+            od = self.od(d)
+        self.assertEqual(od[("2025-09", "41190", "41190")], (3, 3, 1))
 
     def test_filtered_extract_fails_loudly(self):
         """전입·전출 시도 = 서울·경기 조건으로 받은 파일: 인천·비수도권이 없으니 조용히 쓰지 않고 에러."""
